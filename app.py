@@ -6,44 +6,40 @@ from datetime import datetime
 # --- 1. KONFIGURACIJA ---
 st.set_page_config(page_title="Catering", layout="centered")
 
-# CSS ZA POTPUNU KONTROLU MOBILNOG PRIKAZA
+# CSS ZA ULTRA-USKI PRIKAZ NA MOBITELU
 st.markdown("""
     <style>
-    /* Glavni kontejner za red jela */
-    .row-container {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 5px 0px;
-        border-bottom: 1px solid #eee;
-        gap: 5px;
+    /* Forsiranje horizontalnog reda bez prelivanja */
+    [data-testid="stHorizontalBlock"] {
+        display: flex !important;
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
+        width: 100% !important;
+        gap: 2px !important; /* Minimalan razmak između kolona */
     }
-    /* Naziv jela - fiksna širina da ne gura ostale */
-    .jelo-box {
-        width: 45%;
-        font-size: 13px;
-        font-weight: bold;
-        line-height: 1.2;
-    }
-    /* Kontejner za input polja - fiksna širina */
-    .inputs-box {
-        display: flex;
-        width: 55%;
-        justify-content: space-between;
-        gap: 2px;
-    }
-    /* Smanjenje samog input polja */
+    /* Smanjenje širine polja za broj */
     .stNumberInput {
-        width: 55px !important;
+        width: 100% !important;
+        min-width: 45px !important;
     }
+    /* Smanjenje fonta i paddinga unutar polja */
     input {
         padding: 2px !important;
         font-size: 13px !important;
         text-align: center !important;
     }
-    /* Sakrivanje viška prostora */
-    [data-testid="column"] { width: auto !important; flex: none !important; }
-    [data-testid="stHorizontalBlock"] { gap: 0px !important; }
+    /* Stil za naziv jela da ne gura kolone */
+    .jelo-naziv {
+        font-size: 12px !important;
+        font-weight: bold;
+        line-height: 1.1;
+        overflow-wrap: break-word;
+        max-width: 100px;
+    }
+    /* Smanjenje margina kontejnera */
+    [data-testid="stExpander"], [data-testid="stVerticalBlock"] > [data-testid="stVerticalBlock"] {
+        padding: 5px !important;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -54,14 +50,20 @@ dani_standard = ["Ponedjeljak", "Utorak", "Srijeda", "Četvrtak", "Petak", "Subo
 danasnji_dan_index = datetime.now().weekday()
 
 # --- 2. KORISNICI ---
-users = {"admin": "admin123", "Lattonedil": "lattonedil321", "PVA Group": "pvagroup321", "Esintec": "esintec321", "ActivBH": "activbh321"}
+users = {
+    "admin": "tvoja_admin_sifra_123",
+    "Lattonedil": "lattonedil321",
+    "PVA Group": "pvagroup321",
+    "Esintec": "esintec321",
+    "ActivBH": "activbh321"
+}
 
-# --- 3. DINAMIČKI MENI ---
+# --- 3. MENI ---
 try:
     df_raw = conn.read(spreadsheet=spreadsheet_url, worksheet="Meni", ttl=0)
-    df_raw['Dan'] = df_raw['Dan'].str.strip()
-    sed_tekst = df_raw[df_raw['Dan'] == 'Sedmica']['Jelo'].values[0] if 'Sedmica' in df_raw['Dan'].values else ""
-    rok_tekst = df_raw[df_raw['Dan'] == 'Rok']['Jelo'].values[0] if 'Rok' in df_raw['Dan'].values else ""
+    df_raw['Dan'] = df_raw['Dan'].str.strip().replace(['Ponedeljak', 'Ponedjeljak '], 'Ponedjeljak')
+    sed_tekst = df_raw[df_raw['Dan'] == 'Sedmica']['Jelo'].values[0] if 'Sedmica' in df_raw['Dan'].values else "N/A"
+    rok_tekst = df_raw[df_raw['Dan'] == 'Rok']['Jelo'].values[0] if 'Rok' in df_raw['Dan'].values else "N/A"
     pravi_dani = ["Ponedjeljak", "Utorak", "Srijeda", "Četvrtak", "Petak", "Subota"]
     meni = {d: df_raw[df_raw['Dan'] == d]['Jelo'].tolist() for d in pravi_dani if not df_raw[df_raw['Dan'] == d].empty}
 except:
@@ -72,13 +74,12 @@ if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
 
 if not st.session_state["logged_in"]:
-    with st.form("login"):
-        u = st.text_input("Korisnik")
-        p = st.text_input("Lozinka", type="password")
-        if st.form_submit_button("Prijava"):
-            if u in users and users[u] == p:
-                st.session_state["logged_in"], st.session_state["user"] = True, u
-                st.rerun()
+    u = st.sidebar.text_input("Korisnik")
+    p = st.sidebar.text_input("Lozinka", type="password")
+    if st.sidebar.button("Prijava"):
+        if u in users and users[u] == p:
+            st.session_state["logged_in"], st.session_state["user"] = True, u
+            st.rerun()
 else:
     if st.session_state["user"] == "admin":
         st.title("👨‍🍳 Admin")
@@ -88,7 +89,7 @@ else:
             st.table(df_n[df_n['Dan'] == dan_sel].groupby(['Jelo', 'Smjena'])['Kolicina'].sum().reset_index())
     else:
         st.title(f"🍴 {st.session_state['user']}")
-        st.caption(f"📅 {sed_tekst} | ⏰ {rok_tekst}")
+        st.caption(f"📅 {sed_tekst} | ⏰ Rok: {rok_tekst}")
         
         t1, t2 = st.tabs(["🛒 Narudžba", "📜 Istorija"])
         
@@ -102,24 +103,20 @@ else:
             with st.form("main_form"):
                 sve_inpute = []
                 for dan, jela in meni.items():
-                    idx_dan = dani_standard.index(dan)
-                    onemoguci = (danasnji_dan_index <= 5 and danasnji_dan_index >= idx_dan)
+                    onemoguci = (danasnji_dan_index <= 5 and danasnji_dan_index >= dani_standard.index(dan))
                     status = " 🔒" if onemoguci else ""
                     
                     with st.container(border=True):
                         st.markdown(f"**{dan}{status}**")
-                        # Zaglavlje za smjene
+                        # Zaglavlje kolona - vrlo usko
                         h1, h2, h3, h4 = st.columns([2, 1, 1, 1])
                         h2.caption("I")
                         h3.caption("II")
                         h4.caption("III")
                         
                         for jelo in jela:
-                            # Koristimo kolone sa fiksnim omjerom [2, 1, 1, 1] 
-                            # što je jedini način da Streamlit NE lomi red na mobitelu
                             c1, c2, c3, c4 = st.columns([2, 1, 1, 1])
-                            
-                            c1.markdown(f"<div class='jelo-box'>{jelo}</div>", unsafe_allow_html=True)
+                            c1.markdown(f"<div class='jelo-naziv'>{jelo}</div>", unsafe_allow_html=True)
                             
                             def get_v(d, j, s):
                                 if not moja_n.empty:
@@ -134,7 +131,7 @@ else:
                             for v, smj in zip([v1, v2, v3], ["I", "II", "III"]):
                                 sve_inpute.append({"Firma": st.session_state['user'], "Dan": dan, "Jelo": jelo, "Kolicina": int(v), "Smjena": smj})
                 
-                if st.form_submit_button("🚀 POŠALJI NARUDŽBU", use_container_width=True):
+                if st.form_submit_button("🚀 POŠALJI", use_container_width=True):
                     dani_upis = [d for d in meni.keys() if dani_standard.index(d) > danasnji_dan_index] if danasnji_dan_index <= 5 else list(meni.keys())
                     mask = ~((df_sve['Firma'] == st.session_state['user']) & (df_sve['Dan'].isin(dani_upis)))
                     novi = [n for n in sve_inpute if n['Kolicina'] > 0 and n['Dan'] in dani_upis]
@@ -148,4 +145,3 @@ else:
     if st.sidebar.button("Odjava"):
         del st.session_state["logged_in"]
         st.rerun()
-
