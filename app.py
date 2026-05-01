@@ -4,9 +4,10 @@ import pandas as pd
 # 1. Baza korisnika (Lozinke za 10 firmi)
 # U realnom sistemu ovo bi bilo u bazi, ovdje je radi jednostavnosti u rječniku
 users = {
-    "firma1": "lozinka123",
-    "firma2": "sigurnost2024",
-    "firma3": "catering03",
+    "Lattonedil": "lattonedil321",
+    "PVA Group": "pvagroup321",
+    "Esintec": "esintec321",
+    "ActivBH": "activbh321",
     # ... dodajte ostalih 7 firmi
 }
 
