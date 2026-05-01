@@ -7,15 +7,10 @@ from email.mime.text import MIMEText
 # --- 1. KONFIGURACIJA ---
 st.set_page_config(page_title="Catering Narudžbe", layout="centered")
 
-# Provjera Secrets-a
-if "connections" not in st.secrets or "gsheets" not in st.secrets["connections"]:
-    st.error("❌ Greška: Secrets nisu podešeni na Streamlit Dashboardu!")
-    st.stop()
-
-spreadsheet_url = st.secrets["connections"]["gsheets"]["spreadsheet"]
+# Povezivanje sa Google Sheets (koristi podatke iz Secrets-a)
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# --- 2. KORISNICI I MENI ---
+# --- 2. BAZA KORISNIKA I MENI ---
 users = {
     "Lattonedil": "lattonedil321",
     "PVA Group": "pvagroup321",
@@ -39,7 +34,7 @@ def posalji_email(firma, podaci):
         if sender and pwd:
             detalji = "\n".join([f"{n['Dan']} - {n['Jelo']}: {n['Kolicina']} kom" for n in podaci])
             msg = MIMEText(f"Nova narudžba od: {firma}\n\n{detalji}")
-            msg['Subject'] = f"Catering Narudžba - {firma}"
+            msg['Subject'] = f"Nova Narudžba - {firma}"
             msg['From'] = sender
             msg['To'] = sender
             with smtplib.SMTP_SSL("://gmail.com", 465) as server:
@@ -48,7 +43,7 @@ def posalji_email(firma, podaci):
     except:
         pass
 
-# --- 4. LOGIN ---
+# --- 4. LOGIN SISTEM ---
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
 
@@ -64,7 +59,7 @@ if not st.session_state["logged_in"]:
         else:
             st.sidebar.error("Pogrešni podaci")
 else:
-    # --- 5. NARUČIVANJE ---
+    # --- 5. FORMA ZA NARUČIVANJE ---
     st.title(f"Dobrodošli, {st.session_state['user']}")
     
     with st.form("narudzba_forma"):
@@ -76,35 +71,44 @@ else:
                 c1.write(f"**{jelo}**")
                 kol = c2.number_input("Količina", min_value=0, step=1, key=f"{dan}_{jelo}")
                 if kol > 0:
-                    nove_narudzbe.append({"Firma": st.session_state['user'], "Dan": dan, "Jelo": jelo, "Kolicina": int(kol)})
+                    nove_narudzbe.append({
+                        "Firma": st.session_state['user'], 
+                        "Dan": dan, 
+                        "Jelo": jelo, 
+                        "Kolicina": int(kol)
+                    })
             st.divider()
 
         if st.form_submit_button("POŠALJI NARUDŽBU"):
             if nove_narudzbe:
                 try:
-                    # Čitanje (eksplicitno proslijeđen URL i Worksheet)
+                    # Čitanje postojećih podataka (Sheet1 mora postojati!)
                     try:
-                        stari_podaci = conn.read(spreadsheet=spreadsheet_url, worksheet="Sheet1", ttl=0)
+                        stari_podaci = conn.read(worksheet="Sheet1", ttl=0)
                     except:
                         stari_podaci = pd.DataFrame(columns=["Firma", "Dan", "Jelo", "Kolicina"])
                     
                     novi_df = pd.DataFrame(nove_narudzbe)
-                    updated_df = pd.concat([stari_podaci, novi_df], ignore_index=True)
                     
-                    # Slanje u Google Sheets
-                    conn.update(spreadsheet=spreadsheet_url, worksheet="Sheet1", data=updated_df)
+                    # Spajanje
+                    if not stari_podaci.empty:
+                        updated_df = pd.concat([stari_podaci, novi_df], ignore_index=True)
+                    else:
+                        updated_df = novi_df
                     
-                    # Email
+                    # Slanje u tabelu
+                    conn.update(worksheet="Sheet1", data=updated_df)
+                    
+                    # Slanje emaila
                     posalji_email(st.session_state['user'], nove_narudzbe)
                     
                     st.success("✅ Narudžba uspješno sačuvana!")
                     st.balloons()
                     st.table(novi_df)
                 except Exception as e:
-                    st.error(f"Uf! Došlo je do greške: {e}")
-                    st.info("Provjerite: 1. Da li je tabela na 'Anyone with link - Editor'? 2. Da li se list zove tačno 'Sheet1'?")
+                    st.error(f"Greška prilikom čuvanja: {e}")
             else:
-                st.warning("Unesite količinu za barem jedno jelo.")
+                st.warning("Niste odabrali nijedno jelo.")
 
     if st.sidebar.button("Odjavi se"):
         st.session_state["logged_in"] = False
