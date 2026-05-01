@@ -30,7 +30,8 @@ try:
     rok_tekst = rok_info[0] if len(rok_info) > 0 else "Nije uneseno"
 
     pravi_dani = ["Ponedjeljak", "Utorak", "Srijeda", "Četvrtak", "Petak", "Subota"]
-    meni = df_raw[df_raw['Dan'].isin(pravi_dani)].groupby('Dan', sort=False)['Jelo'].apply(list).to_dict()
+    df_jela = df_raw[df_raw['Dan'].isin(pravi_dani)]
+    meni = df_jela.groupby('Dan', sort=False)['Jelo'].apply(list).to_dict()
 except Exception as e:
     st.error(f"Greška pri učitavanju menija: {e}")
     st.stop()
@@ -53,19 +54,13 @@ if not st.session_state["logged_in"]:
 else:
     # --- 5. ADMIN PANEL ---
     if st.session_state["user"] == "admin":
-        st.title("👨‍🍳 Admin Panel - Kuhinja")
+        st.title("👨‍🍳 Admin Panel")
         df_n = conn.read(spreadsheet=spreadsheet_url, worksheet="Sheet1", ttl=0)
-        
         if not df_n.empty:
             dan_sel = st.selectbox("Izaberi dan:", list(meni.keys()))
-            # Zbirno po smjenama
             zbirno = df_n[df_n['Dan'] == dan_sel].groupby(['Jelo', 'Smjena'])['Kolicina'].sum().reset_index()
-            st.subheader(f"Plan za {dan_sel}")
-            st.dataframe(zbirno, use_container_width=True, hide_index=True)
-            st.metric("Ukupno obroka za dan", zbirno['Kolicina'].sum())
-        else:
-            st.info("Nema narudžbi.")
-
+            st.table(zbirno)
+    
     # --- 6. KORISNIČKI PANEL ---
     else:
         st.title(f"🍴 {st.session_state['user']}")
@@ -73,23 +68,26 @@ else:
         c_i1.info(f"📅 **Sedmica:** {sed_tekst}")
         c_i2.warning(f"⏰ **Rok:** {rok_tekst}")
         
-        t1, t2 = st.tabs(["🛒 Narudžba po smjenama", "📜 Istorija"])
+        t1, t2 = st.tabs(["🛒 Narudžba", "📜 Istorija"])
         
         with t1:
             with st.form("narudzba_smjene", clear_on_submit=True):
                 sve_n = []
                 for dan, jela in meni.items():
                     onemoguci = False
-                    idx_dan = list(dani_mapa.values()).index(dan)
                     status = ""
-                    if danasnji_dan_index <= 5:
+                    idx_dan = list(dani_mapa.values()).index(dan)
+                    
+                    # NOVA LOGIKA: Radnim danima (Pon-Pet) zaključaj prošle dane. 
+                    # Subotom i Nedjeljom (5 i 6) otključaj SVE za novu sedmicu.
+                    if danasnji_dan_index <= 4: 
                         if danasnji_dan_index >= idx_dan:
-                            onemoguci, status = True, " 🔒"
-                    else: status = " 🔓"
+                            onemoguci, status = True, " 🔒 (Zatvoreno)"
+                    else:
+                        onemoguci, status = False, " 🔓 (Nova sedmica)"
 
                     with st.container(border=True):
                         st.markdown(f"#### 📅 {dan}{status}")
-                        # Zaglavlje za smjene
                         h1, h2, h3, h4 = st.columns([2.5, 1, 1, 1])
                         h2.caption("I smjena")
                         h3.caption("II smjena")
@@ -98,8 +96,6 @@ else:
                         for jelo in jela:
                             c1, c2, c3, c4 = st.columns([2.5, 1, 1, 1])
                             c1.markdown(f"<div style='padding-top:5px;'>{jelo}</div>", unsafe_allow_html=True)
-                            
-                            # Unos za tri smjene
                             k1 = c2.number_input("I", 0, 100, step=1, key=f"{dan}_{jelo}_S1", label_visibility="collapsed", disabled=onemoguci)
                             k2 = c3.number_input("II", 0, 100, step=1, key=f"{dan}_{jelo}_S2", label_visibility="collapsed", disabled=onemoguci)
                             k3 = c4.number_input("III", 0, 100, step=1, key=f"{dan}_{jelo}_S3", label_visibility="collapsed", disabled=onemoguci)
@@ -107,17 +103,22 @@ else:
                             for k, s in zip([k1, k2, k3], ["I", "II", "III"]):
                                 sve_n.append({"Firma": st.session_state['user'], "Dan": dan, "Jelo": jelo, "Kolicina": int(k), "Smjena": s})
                 
-                if st.form_submit_button("🚀 SAČUVAJ SVE SMJENE", use_container_width=True):
+                if st.form_submit_button("🚀 SAČUVAJ NARUDŽBU", use_container_width=True):
                     try:
                         df_tr = conn.read(spreadsheet=spreadsheet_url, worksheet="Sheet1", ttl=0).dropna(how='all')
-                        dani_upis = [d for d in meni.keys() if list(dani_mapa.values()).index(d) > danasnji_dan_index] if danasnji_dan_index <= 5 else list(meni.keys())
+                        
+                        # Definisanje dana koji se smiju mijenjati
+                        if danasnji_dan_index <= 4:
+                            dani_upis = [d for d in meni.keys() if list(dani_mapa.values()).index(d) > danasnji_dan_index]
+                        else:
+                            dani_upis = list(meni.keys())
                         
                         mask = ~((df_tr['Firma'] == st.session_state['user']) & (df_tr['Dan'].isin(dani_upis)))
                         novi = [n for n in sve_n if n['Kolicina'] > 0 and n['Dan'] in dani_upis]
                         df_f = pd.concat([df_tr[mask], pd.DataFrame(novi)], ignore_index=True)
                         
                         conn.update(spreadsheet=spreadsheet_url, worksheet="Sheet1", data=df_f)
-                        st.success("✅ Narudžbe za smjene su sačuvane!")
+                        st.success("✅ Narudžba sačuvana!")
                         st.rerun()
                     except Exception as e:
                         st.error(f"Greška: {e}")
