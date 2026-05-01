@@ -7,11 +7,10 @@ from email.mime.text import MIMEText
 # --- 1. KONFIGURACIJA STRANICE ---
 st.set_page_config(page_title="Catering Narudžbe", layout="centered")
 
-# CSS za dodatno uljepšavanje (opcionalno, ali pomaže ravnini)
+# CSS za ljepši izgled
 st.markdown("""
     <style>
     .stNumberInput { width: 120px !important; }
-    .day-container { background-color: #f9f9f9; padding: 20px; border-radius: 10px; margin-bottom: 20px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -27,12 +26,24 @@ users = {
     "ActivBH": "activbh321"
 }
 
-# --- 3. DINAMIČKI MENI IZ GOOGLE TABELE ---
+# --- 3. DINAMIČKI MENI, DATUM I ROK ---
 try:
-    df_meni = conn.read(spreadsheet=spreadsheet_url, worksheet="Meni", ttl=0)
-    meni = df_meni.groupby('Dan', sort=False)['Jelo'].apply(list).to_dict()
+    df_meni_raw = conn.read(spreadsheet=spreadsheet_url, worksheet="Meni", ttl=0)
+    
+    # Izvlačenje info redova (Sedmica i Rok)
+    sedmica_info = df_meni_raw[df_meni_raw['Dan'] == 'Sedmica']['Jelo'].values
+    rok_info = df_meni_raw[df_meni_raw['Dan'] == 'Rok']['Jelo'].values
+    
+    sed_tekst = sedmica_info[0] if len(sedmica_info) > 0 else "Nije uneseno"
+    rok_tekst = rok_info[0] if len(rok_info) > 0 else "Nije uneseno"
+
+    # Filtriranje samo jela za prave dane
+    pravi_dani = ["Ponedjeljak", "Utorak", "Srijeda", "Četvrtak", "Petak"]
+    df_jela = df_meni_raw[df_meni_raw['Dan'].isin(pravi_dani)]
+    meni = df_jela.groupby('Dan', sort=False)['Jelo'].apply(list).to_dict()
+    
 except Exception as e:
-    st.error(f"Greška pri učitavanju menija: {e}")
+    st.error(f"Greška pri učitavanju tabele Meni: {e}")
     st.stop()
 
 # --- 4. FUNKCIJA ZA EMAIL ---
@@ -71,89 +82,65 @@ else:
     # --- 6. ADMIN PANEL ---
     if st.session_state["user"] == "admin":
         st.title("👨‍🍳 Admin Panel - Pregled Kuhinje")
-        df_narudzbe = conn.read(spreadsheet=spreadsheet_url, worksheet="Sheet1", ttl=0)
+        df_n = conn.read(spreadsheet=spreadsheet_url, worksheet="Sheet1", ttl=0)
         
-        if not df_narudzbe.empty:
-            zbirno = df_narudzbe.groupby(['Dan', 'Jelo'])['Kolicina'].sum().reset_index()
-            izbor_dana = st.selectbox("Izaberi dan za pregled:", list(meni.keys()))
-            danasnji_plan = zbirno[zbirno['Dan'] == izbor_dana]
-            
-            st.subheader(f"Plan kuhanja za {izbor_dana}")
-            st.table(danasnji_plan)
-            st.metric("Ukupno obroka", danasnji_plan['Kolicina'].sum())
+        if not df_n.empty:
+            zbirno = df_n.groupby(['Dan', 'Jelo'])['Kolicina'].sum().reset_index()
+            izbor_dana = st.selectbox("Izaberi dan:", list(meni.keys()))
+            plan = zbirno[zbirno['Dan'] == izbor_dana]
+            st.subheader(f"Plan za {izbor_dana}")
+            st.table(plan)
+            st.metric("Ukupno obroka", plan['Kolicina'].sum())
         else:
-            st.info("Još uvijek nema narudžbi u sistemu.")
+            st.info("Nema narudžbi.")
 
     # --- 7. KORISNIČKI PANEL ---
     else:
         st.title(f"🍴 Dobrodošli, {st.session_state['user']}")
         
-        t1, t2 = st.tabs(["🛒 Nova Narudžba", "📜 Istorija Narudžbi"])
+        # INFO TRAKA (DATUM I ROK)
+        c_info1, c_info2 = st.columns(2)
+        with c_info1:
+            st.info(f"📅 **Meni za period:**\n\n{sed_tekst}")
+        with c_info2:
+            st.warning(f"⏰ **Rok za narudžbu:**\n\n{rok_tekst}")
+        
+        t1, t2 = st.tabs(["🛒 Nova Narudžba", "📜 Istorija"])
         
         with t1:
-            st.markdown("### 📝 Odaberite meni za iduću sedmicu")
-            with st.form("narudzba_forma", clear_on_submit=True):
-                sve_narudzbe = []
-                
+            with st.form("narudzba_f", clear_on_submit=True):
+                nove_n = []
                 for dan, jela in meni.items():
-                    # Svaki dan je u svom okviru
                     with st.container(border=True):
                         st.markdown(f"#### 📅 {dan}")
-                        
                         for jelo in jela:
-                            # 3/4 širine za jelo, 1/4 za broj (ravnina!)
-                            col_naziv, col_input = st.columns([3, 1])
-                            
-                            with col_naziv:
+                            c1, c2 = st.columns([3, 1])
+                            with c1:
                                 st.markdown(f"<div style='padding-top: 8px;'><b>{jelo}</b></div>", unsafe_allow_html=True)
-                            
-                            with col_input:
-                                kol = st.number_input("Količina", 0, 100, step=1, key=f"{dan}_{jelo}", label_visibility="collapsed")
-                            
+                            with c2:
+                                kol = st.number_input("Kol.", 0, 100, step=1, key=f"{dan}_{jelo}", label_visibility="collapsed")
                             if kol > 0:
-                                sve_narudzbe.append({
-                                    "Firma": st.session_state['user'], 
-                                    "Dan": dan, 
-                                    "Jelo": jelo, 
-                                    "Kolicina": int(kol)
-                                })
+                                nove_n.append({"Firma": st.session_state['user'], "Dan": dan, "Jelo": jelo, "Kolicina": int(kol)})
                 
                 st.markdown("<br>", unsafe_allow_html=True)
-                # Centrirano i veliko dugme
-                _, col_dugme, _ = st.columns([1, 2, 1])
-                with col_dugme:
-                    posalji = st.form_submit_button("🚀 POŠALJI NARUDŽBU", use_container_width=True)
-                
-                if posalji:
-                    if sve_narudzbe:
-                        try:
-                            stari = conn.read(spreadsheet=spreadsheet_url, worksheet="Sheet1", ttl=0)
-                            # Čišćenje praznih redova prije spajanja
-                            stari = stari.dropna(how='all')
-                            novo_df = pd.DataFrame(sve_narudzbe)
-                            updated_df = pd.concat([stari, novo_df], ignore_index=True)
-                            
-                            conn.update(spreadsheet=spreadsheet_url, worksheet="Sheet1", data=updated_df)
-                            posalji_email(st.session_state['user'], sve_narudzbe)
-                            
-                            st.success("✅ Narudžba je uspješno sačuvana!")
-                            st.balloons()
-                        except Exception as e:
-                            st.error(f"Greška pri slanju: {e}")
+                _, col_b, _ = st.columns([1, 2, 1])
+                if col_b.form_submit_button("🚀 POŠALJI NARUDŽBU", use_container_width=True):
+                    if nove_n:
+                        stari = conn.read(spreadsheet=spreadsheet_url, worksheet="Sheet1", ttl=0).dropna(how='all')
+                        updated = pd.concat([stari, pd.DataFrame(nove_n)], ignore_index=True)
+                        conn.update(spreadsheet=spreadsheet_url, worksheet="Sheet1", data=updated)
+                        posalji_email(st.session_state['user'], nove_n)
+                        st.success("✅ Narudžba uspješno poslana!")
+                        st.balloons()
                     else:
-                        st.warning("⚠️ Molimo unesite količinu za barem jedno jelo.")
+                        st.warning("⚠️ Unesite količinu.")
 
         with t2:
-            st.subheader("Vaša istorija narudžbi")
             try:
-                df_history = conn.read(spreadsheet=spreadsheet_url, worksheet="Sheet1", ttl=0)
-                istorija = df_history[df_history['Firma'] == st.session_state['user']]
-                if not istorija.empty:
-                    st.dataframe(istorija, use_container_width=True, hide_index=True)
-                else:
-                    st.info("Nema prethodnih narudžbi.")
+                hist = conn.read(spreadsheet=spreadsheet_url, worksheet="Sheet1", ttl=0)
+                st.dataframe(hist[hist['Firma'] == st.session_state['user']], use_container_width=True, hide_index=True)
             except:
-                st.error("Nije moguće učitati istoriju.")
+                st.error("Greška pri učitavanju istorije.")
 
     if st.sidebar.button("Odjavi se", use_container_width=True):
         st.session_state["logged_in"] = False
