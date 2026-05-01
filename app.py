@@ -5,11 +5,9 @@ from datetime import datetime
 
 # --- 1. KONFIGURACIJA ---
 st.set_page_config(page_title="Catering Narudžbe", layout="centered")
-
 spreadsheet_url = st.secrets["connections"]["gsheets"]["spreadsheet"]
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# Mapiranje dana (0=Pon, ..., 6=Ned)
 dani_standard = ["Ponedjeljak", "Utorak", "Srijeda", "Četvrtak", "Petak", "Subota", "Nedjelja"]
 danasnji_dan_index = datetime.now().weekday()
 
@@ -25,27 +23,16 @@ users = {
 # --- 3. DINAMIČKI MENI ---
 try:
     df_raw = conn.read(spreadsheet=spreadsheet_url, worksheet="Meni", ttl=0)
-    
-    # Čistimo podatke (brišemo razmake i standardizujemo "Ponedeljak")
-    df_raw['Dan'] = df_raw['Dan'].str.strip()
-    df_raw['Dan'] = df_raw['Dan'].replace(['Ponedeljak', 'Ponedjeljak '], 'Ponedjeljak')
+    df_raw['Dan'] = df_raw['Dan'].str.strip().replace(['Ponedeljak', 'Ponedjeljak '], 'Ponedjeljak')
     
     sedmica_info = df_raw[df_raw['Dan'] == 'Sedmica']['Jelo'].values
     rok_info = df_raw[df_raw['Dan'] == 'Rok']['Jelo'].values
     sed_tekst = sedmica_info[0] if len(sedmica_info) > 0 else "Nije uneseno"
     rok_tekst = rok_info[0] if len(rok_info) > 0 else "Nije uneseno"
 
-    # Radni dani
     pravi_dani = ["Ponedjeljak", "Utorak", "Srijeda", "Četvrtak", "Petak", "Subota"]
     df_jela = df_raw[df_raw['Dan'].isin(pravi_dani)]
-    
-    # Grupišemo po danima onako kako se pojavljuju u tabeli
-    meni = {}
-    for dan in pravi_dani:
-        jela_za_dan = df_jela[df_jela['Dan'] == dan]['Jelo'].tolist()
-        if jela_za_dan:
-            meni[dan] = jela_za_dan
-            
+    meni = {dan: df_jela[df_jela['Dan'] == dan]['Jelo'].tolist() for dan in pravi_dani if not df_jela[df_jela['Dan'] == dan].empty}
 except Exception as e:
     st.error(f"Greška pri učitavanju menija: {e}")
     st.stop()
@@ -82,17 +69,23 @@ else:
         c_i1.info(f"📅 **Sedmica:** {sed_tekst}")
         c_i2.warning(f"⏰ **Rok:** {rok_tekst}")
         
-        t1, t2 = st.tabs(["🛒 Narudžba", "📜 Istorija"])
+        t1, t2 = st.tabs(["🛒 Narudžba / Izmjena", "📜 Istorija"])
         
+        # --- DOBAVLJANJE POSTOJEĆIH NARUDŽBI ZA PRIKAZ U FORMI ---
+        try:
+            df_sve = conn.read(spreadsheet=spreadsheet_url, worksheet="Sheet1", ttl=0).dropna(how='all')
+            moja_narudzba = df_sve[df_sve['Firma'] == st.session_state['user']]
+        except:
+            moja_narudzba = pd.DataFrame()
+
         with t1:
-            with st.form("narudzba_smjene"):
+            with st.form("narudzba_smjene_v2"):
                 sve_n = []
                 for dan, jela in meni.items():
                     onemoguci = False
                     status = ""
                     idx_dan = dani_standard.index(dan)
                     
-                    # LOGIKA: Ako je danas radni dan (Pon-Sub), zaključaj prošle i današnji
                     if danasnji_dan_index <= 5: 
                         if danasnji_dan_index >= idx_dan:
                             onemoguci, status = True, " 🔒 (Zatvoreno)"
@@ -110,38 +103,44 @@ else:
                             c1, c2, c3, c4 = st.columns([2.5, 1, 1, 1])
                             c1.markdown(f"<div style='padding-top:5px;'>{jelo}</div>", unsafe_allow_html=True)
                             
-                            k1 = c2.number_input("I", 0, 100, step=1, key=f"{dan}_{jelo}_S1", label_visibility="collapsed", disabled=onemoguci)
-                            k2 = c3.number_input("II", 0, 100, step=1, key=f"{dan}_{jelo}_S2", label_visibility="collapsed", disabled=onemoguci)
-                            k3 = c4.number_input("III", 0, 100, step=1, key=f"{dan}_{jelo}_S3", label_visibility="collapsed", disabled=onemoguci)
+                            # Funkcija za traženje stare količine
+                            def get_stara_kol(d, j, s):
+                                if not moja_narudzba.empty:
+                                    val = moja_narudzba[(moja_narudzba['Dan'] == d) & (moja_narudzba['Jelo'] == j) & (moja_narudzba['Smjena'] == s)]['Kolicina'].values
+                                    return int(val[0]) if len(val) > 0 else 0
+                                return 0
+
+                            k1 = c2.number_input("I", 0, 100, step=1, value=get_stara_kol(dan, jelo, "I"), key=f"{dan}_{jelo}_S1", label_visibility="collapsed", disabled=onemoguci)
+                            k2 = c3.number_input("II", 0, 100, step=1, value=get_stara_kol(dan, jelo, "II"), key=f"{dan}_{jelo}_S2", label_visibility="collapsed", disabled=onemoguci)
+                            k3 = c4.number_input("III", 0, 100, step=1, value=get_stara_kol(dan, jelo, "III"), key=f"{dan}_{jelo}_S3", label_visibility="collapsed", disabled=onemoguci)
                             
                             for k, s in zip([k1, k2, k3], ["I", "II", "III"]):
                                 sve_n.append({"Firma": st.session_state['user'], "Dan": dan, "Jelo": jelo, "Kolicina": int(k), "Smjena": s})
                 
-                if st.form_submit_button("🚀 SAČUVAJ NARUDŽBU", use_container_width=True):
+                if st.form_submit_button("🚀 SAČUVAJ IZMJENE", use_container_width=True):
                     try:
-                        df_tr = conn.read(spreadsheet=spreadsheet_url, worksheet="Sheet1", ttl=0).dropna(how='all')
-                        
+                        # Određivanje dana koji se smiju mijenjati
                         if danasnji_dan_index <= 5:
-                            dani_upis = [d for d in meni.keys() if dani_standard.index(d) > danasnji_dan_index]
+                            dani_za_upis = [d for d in meni.keys() if dani_standard.index(d) > danasnji_dan_index]
                         else:
-                            dani_upis = list(meni.keys())
+                            dani_za_upis = list(meni.keys())
                         
-                        mask = ~((df_tr['Firma'] == st.session_state['user']) & (df_tr['Dan'].isin(dani_upis)))
-                        novi = [n for n in sve_n if n['Kolicina'] > 0 and n['Dan'] in dani_upis]
-                        df_f = pd.concat([df_tr[mask], pd.DataFrame(novi)], ignore_index=True)
+                        # Zadrži sve tuđe narudžbe i moje narudžbe za zaključane dane
+                        mask_ostavi = ~((df_sve['Firma'] == st.session_state['user']) & (df_sve['Dan'].isin(dani_za_upis)))
+                        df_zadrzano = df_sve[mask_ostavi]
                         
-                        conn.update(spreadsheet=spreadsheet_url, worksheet="Sheet1", data=df_f)
-                        st.success("✅ Narudžba sačuvana!")
-                        st.balloons()
+                        # Dodaj nove podatke samo za otključane dane
+                        novi_podaci = [n for n in sve_n if n['Kolicina'] > 0 and n['Dan'] in dani_za_upis]
+                        df_final = pd.concat([df_zadrzano, pd.DataFrame(novi_podaci)], ignore_index=True)
+                        
+                        conn.update(spreadsheet=spreadsheet_url, worksheet="Sheet1", data=df_final)
+                        st.success("✅ Izmjene su sačuvane!")
+                        st.rerun()
                     except Exception as e:
                         st.error(f"Greška: {e}")
 
         with t2:
-            try:
-                hist = conn.read(spreadsheet=spreadsheet_url, worksheet="Sheet1", ttl=0)
-                st.dataframe(hist[hist['Firma'] == st.session_state['user']], use_container_width=True, hide_index=True)
-            except:
-                st.info("Nema podataka.")
+            st.dataframe(moja_narudzba, use_container_width=True, hide_index=True)
 
     if st.sidebar.button("Odjavi se", use_container_width=True):
         st.session_state["logged_in"] = False
