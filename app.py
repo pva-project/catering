@@ -4,20 +4,18 @@ from streamlit_gsheets import GSheetsConnection
 import smtplib
 from email.mime.text import MIMEText
 
-# --- 1. POSTAVKE I POVEZIVANJE ---
+# --- 1. KONFIGURACIJA ---
 st.set_page_config(page_title="Catering Narudžbe", layout="centered")
 
-# Provjera da li su Secrets pravilno postavljeni
+# Provjera Secrets-a
 if "connections" not in st.secrets or "gsheets" not in st.secrets["connections"]:
-    st.error("Greška: Niste postavili Secrets na Streamlit Dashboardu!")
-    st.info("Dodajte [connections.gsheets] i spreadsheet link u Settings -> Secrets.")
+    st.error("❌ Greška: Secrets nisu podešeni na Streamlit Dashboardu!")
     st.stop()
 
-# Preuzimanje URL-a iz Secrets-a
 spreadsheet_url = st.secrets["connections"]["gsheets"]["spreadsheet"]
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# --- 2. BAZA KORISNIKA I MENI ---
+# --- 2. KORISNICI I MENI ---
 users = {
     "Lattonedil": "lattonedil321",
     "PVA Group": "pvagroup321",
@@ -38,88 +36,75 @@ def posalji_email(firma, podaci):
     try:
         sender = st.secrets["connections"]["gsheets"].get("email_user")
         pwd = st.secrets["connections"]["gsheets"].get("email_password")
-        
         if sender and pwd:
             detalji = "\n".join([f"{n['Dan']} - {n['Jelo']}: {n['Kolicina']} kom" for n in podaci])
             msg = MIMEText(f"Nova narudžba od: {firma}\n\n{detalji}")
-            msg['Subject'] = f"Nova Narudžba - {firma}"
+            msg['Subject'] = f"Catering Narudžba - {firma}"
             msg['From'] = sender
             msg['To'] = sender
-            
             with smtplib.SMTP_SSL("://gmail.com", 465) as server:
                 server.login(sender, pwd)
                 server.sendmail(sender, sender, msg.as_string())
     except:
         pass
 
-# --- 4. LOGIN SISTEM ---
+# --- 4. LOGIN ---
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
 
 if not st.session_state["logged_in"]:
     st.sidebar.header("Prijava za Firme")
-    user_input = st.sidebar.text_input("Korisničko ime")
-    pw_input = st.sidebar.text_input("Lozinka", type="password")
+    u = st.sidebar.text_input("Korisničko ime")
+    p = st.sidebar.text_input("Lozinka", type="password")
     if st.sidebar.button("Prijavi se"):
-        if user_input in users and users[user_input] == pw_input:
+        if u in users and users[u] == p:
             st.session_state["logged_in"] = True
-            st.session_state["user"] = user_input
+            st.session_state["user"] = u
             st.rerun()
         else:
-            st.sidebar.error("Pogrešno korisničko ime ili lozinka")
+            st.sidebar.error("Pogrešni podaci")
 else:
-    # --- 5. FORMA ZA NARUČIVANJE ---
+    # --- 5. NARUČIVANJE ---
     st.title(f"Dobrodošli, {st.session_state['user']}")
-    st.write("Označite količine za jela koja želite naručiti:")
     
-    with st.form("narudzba_forma", clear_on_submit=True):
+    with st.form("narudzba_forma"):
         nove_narudzbe = []
-        
         for dan, jela in meni.items():
             st.subheader(f"📅 {dan}")
             for jelo in jela:
                 c1, c2 = st.columns([3, 1])
-                with c1:
-                    st.write(f"{jelo}")
-                with c2:
-                    # Svaki input ima unikatan key baziran na danu i jelu
-                    kol = st.number_input("Količina", min_value=0, step=1, key=f"{dan}_{jelo}")
-                
+                c1.write(f"**{jelo}**")
+                kol = c2.number_input("Količina", min_value=0, step=1, key=f"{dan}_{jelo}")
                 if kol > 0:
-                    nove_narudzbe.append({
-                        "Firma": st.session_state['user'], 
-                        "Dan": dan, 
-                        "Jelo": jelo, 
-                        "Kolicina": int(kol)
-                    })
+                    nove_narudzbe.append({"Firma": st.session_state['user'], "Dan": dan, "Jelo": jelo, "Kolicina": int(kol)})
             st.divider()
 
         if st.form_submit_button("POŠALJI NARUDŽBU"):
             if nove_narudzbe:
                 try:
-                    # Čitanje postojećih podataka
-                    stari_podaci = conn.read(spreadsheet=spreadsheet_url, worksheet="Sheet1")
+                    # Čitanje (eksplicitno proslijeđen URL i Worksheet)
+                    try:
+                        stari_podaci = conn.read(spreadsheet=spreadsheet_url, worksheet="Sheet1", ttl=0)
+                    except:
+                        stari_podaci = pd.DataFrame(columns=["Firma", "Dan", "Jelo", "Kolicina"])
                     
-                    # Spajanje sa novim podacima
                     novi_df = pd.DataFrame(nove_narudzbe)
-                    if not stari_podaci.empty:
-                        updated_df = pd.concat([stari_podaci, novi_df], ignore_index=True)
-                    else:
-                        updated_df = novi_df
+                    updated_df = pd.concat([stari_podaci, novi_df], ignore_index=True)
                     
-                    # Slanje nazad u Google Sheets
+                    # Slanje u Google Sheets
                     conn.update(spreadsheet=spreadsheet_url, worksheet="Sheet1", data=updated_df)
                     
-                    # Slanje emaila
+                    # Email
                     posalji_email(st.session_state['user'], nove_narudzbe)
                     
-                    st.success("Vaša narudžba je uspješno poslana i zabilježena!")
+                    st.success("✅ Narudžba uspješno sačuvana!")
                     st.balloons()
                     st.table(novi_df)
                 except Exception as e:
-                    st.error(f"Došlo je do greške prilikom čuvanja: {e}")
+                    st.error(f"Uf! Došlo je do greške: {e}")
+                    st.info("Provjerite: 1. Da li je tabela na 'Anyone with link - Editor'? 2. Da li se list zove tačno 'Sheet1'?")
             else:
-                st.warning("Niste odabrali nijedno jelo (količine su 0).")
+                st.warning("Unesite količinu za barem jedno jelo.")
 
     if st.sidebar.button("Odjavi se"):
         st.session_state["logged_in"] = False
