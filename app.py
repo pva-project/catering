@@ -6,17 +6,40 @@ from datetime import datetime
 # --- 1. KONFIGURACIJA ---
 st.set_page_config(page_title="Catering", layout="centered")
 
-# CSS za forsiranje vodoravnog prikaza na mobitelu
+# CSS ZA ULTRA-USKI PRIKAZ NA MOBITELU
 st.markdown("""
     <style>
+    /* Forsiranje horizontalnog reda bez prelivanja */
     [data-testid="stHorizontalBlock"] {
         display: flex !important;
         flex-direction: row !important;
         flex-wrap: nowrap !important;
-        align-items: center !important;
+        width: 100% !important;
+        gap: 2px !important; /* Minimalan razmak između kolona */
     }
-    .stNumberInput { min-width: 60px !important; }
-    .jelo-naziv { font-size: 14px; font-weight: bold; line-height: 1.2; }
+    /* Smanjenje širine polja za broj */
+    .stNumberInput {
+        width: 100% !important;
+        min-width: 45px !important;
+    }
+    /* Smanjenje fonta i paddinga unutar polja */
+    input {
+        padding: 2px !important;
+        font-size: 13px !important;
+        text-align: center !important;
+    }
+    /* Stil za naziv jela da ne gura kolone */
+    .jelo-naziv {
+        font-size: 12px !important;
+        font-weight: bold;
+        line-height: 1.1;
+        overflow-wrap: break-word;
+        max-width: 100px;
+    }
+    /* Smanjenje margina kontejnera */
+    [data-testid="stExpander"], [data-testid="stVerticalBlock"] > [data-testid="stVerticalBlock"] {
+        padding: 5px !important;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -66,7 +89,8 @@ else:
             st.table(df_n[df_n['Dan'] == dan_sel].groupby(['Jelo', 'Smjena'])['Kolicina'].sum().reset_index())
     else:
         st.title(f"🍴 {st.session_state['user']}")
-        st.info(f"📅 {sed_tekst} | ⏰ Rok: {rok_tekst}")
+        st.caption(f"📅 {sed_tekst} | ⏰ Rok: {rok_tekst}")
+        
         t1, t2 = st.tabs(["🛒 Narudžba", "📜 Istorija"])
         
         try:
@@ -80,11 +104,11 @@ else:
                 sve_inpute = []
                 for dan, jela in meni.items():
                     onemoguci = (danasnji_dan_index <= 5 and danasnji_dan_index >= dani_standard.index(dan))
-                    status = " 🔒" if onemoguci else " 🔓"
+                    status = " 🔒" if onemoguci else ""
                     
                     with st.container(border=True):
                         st.markdown(f"**{dan}{status}**")
-                        # Zaglavlje kolona
+                        # Zaglavlje kolona - vrlo usko
                         h1, h2, h3, h4 = st.columns([2, 1, 1, 1])
                         h2.caption("I")
                         h3.caption("II")
@@ -94,7 +118,6 @@ else:
                             c1, c2, c3, c4 = st.columns([2, 1, 1, 1])
                             c1.markdown(f"<div class='jelo-naziv'>{jelo}</div>", unsafe_allow_html=True)
                             
-                            # Popravljena funkcija za staru količinu
                             def get_v(d, j, s):
                                 if not moja_n.empty:
                                     f = moja_n[(moja_n['Dan']==d) & (moja_n['Jelo']==j) & (moja_n['Smjena']==s)]
@@ -108,7 +131,7 @@ else:
                             for v, smj in zip([v1, v2, v3], ["I", "II", "III"]):
                                 sve_inpute.append({"Firma": st.session_state['user'], "Dan": dan, "Jelo": jelo, "Kolicina": int(v), "Smjena": smj})
                 
-                if st.form_submit_button("🚀 SAČUVAJ", use_container_width=True):
+                if st.form_submit_button("🚀 POŠALJI", use_container_width=True):
                     dani_upis = [d for d in meni.keys() if dani_standard.index(d) > danasnji_dan_index] if danasnji_dan_index <= 5 else list(meni.keys())
                     mask = ~((df_sve['Firma'] == st.session_state['user']) & (df_sve['Dan'].isin(dani_upis)))
                     novi = [n for n in sve_inpute if n['Kolicina'] > 0 and n['Dan'] in dani_upis]
