@@ -106,7 +106,8 @@ else:
                     st.balloons()
                     st.table(novi_df)
                 except Exception as e:
-                    st.error(f"Greška prilikom čuvanja: {e}")
+                    st.error("❌ Detaljna greška:")
+                    st.exception(e)  # Ovo će ispisati kompletan 'Traceback' koji mi treba
             else:
                 st.warning("Niste odabrali nijedno jelo.")
 
