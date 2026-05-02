@@ -4,16 +4,21 @@ from streamlit_gsheets import GSheetsConnection
 from datetime import datetime
 import time
 
-# --- 1. KONFIGURACIJA ---
+# --- 1. KONFIGURACIJA I NASILNO SKRIVANJE UI ELEMENATA ---
 st.set_page_config(page_title="Catering Management", layout="centered")
 
-# CSS za sakrivanje ikonice krunice, menija i footera
+# Agresivni CSS za potpuno uklanjanje krunice, menija i fusnote
 hide_st_style = """
             <style>
-            #MainMenu {visibility: hidden;}
-            footer {visibility: hidden;}
-            header {visibility: hidden;}
-            .stAppDeployButton {display: none;}
+            #MainMenu {visibility: hidden !important;}
+            footer {visibility: hidden !important;}
+            header {visibility: hidden !important;}
+            /* Sakriva krunicu (Deploy dugme) */
+            .stAppDeployButton {display: none !important;}
+            /* Sakriva toolbar skroz gore desno */
+            [data-testid="stHeader"] {display: none !important;}
+            /* Dodatno sakrivanje za mobilne uređaje */
+            .st-emotion-cache-zq59db {display: none !important;}
             </style>
             """
 st.markdown(hide_st_style, unsafe_allow_html=True)
@@ -30,7 +35,6 @@ users = {"admin": "admin123", "Lattonedil": "lattonedil321", "PVA Group": "pvagr
 
 # --- 3. FUNKCIJE ---
 def ucitaj_sheet(sheet_name):
-    # Definišemo kolone za svaki sheet kako bi izbjegli greške ako su prazni
     cols = {
         "Sheet1": ["Firma", "Dan", "Jelo", "Kolicina", "Smjena"],
         "Ocjene": ["Firma", "Jelo", "Ocjena", "Komentar", "Kuvar"],
@@ -48,8 +52,7 @@ def ucitaj_sheet(sheet_name):
 
 def izracunaj_prosjeke():
     df_o = ucitaj_sheet("Ocjene")
-    if df_o.empty or "Ocjena" not in df_o.columns or "Jelo" not in df_o.columns: 
-        return {}, {}
+    if df_o.empty or "Ocjena" not in df_o.columns: return {}, {}
     df_o['Numericka'] = df_o['Ocjena'].map(mapa_ocjena)
     p_jela = df_o.groupby('Jelo')['Numericka'].mean().round(1).to_dict()
     p_kuvari = df_o.groupby('Kuvar')['Numericka'].mean().round(1).to_dict() if "Kuvar" in df_o.columns else {}
@@ -155,7 +158,6 @@ else:
                 unose = []
                 for dan in dani_std:
                     idx = dani_std.index(dan)
-                    # Zaključavanje: ako je dan već prošao (danasnji_dan_index >= idx)
                     onemoguci = (zakljucaj and danasnji_dan_index >= idx)
                     status = " 🔒" if onemoguci else " 🔓"
                     with st.container(border=True):
@@ -165,13 +167,11 @@ else:
                             prosjek = p_jela.get(j, None)
                             st.write(f"**{j}** {f'(⭐ {prosjek})' if prosjek else '(🆕)'}")
                             col1, col2, col3 = st.columns(3)
-                            
                             def get_v(d, jl, s):
                                 if not df_sve.empty and "Firma" in df_sve.columns:
                                     v = df_sve[(df_sve['Firma']==st.session_state['user']) & (df_sve['Dan']==f"{prefix}-{d}") & (df_sve['Jelo']==jl) & (df_sve['Smjena']==s)]['Kolicina'].tolist()
                                     return int(v[0]) if v else 0
                                 return 0
-
                             k1 = col1.number_input("I Smjena", 0, 100, get_v(dan, j, "I"), key=f"{prefix}_{dan}_{j}_1", disabled=onemoguci)
                             k2 = col2.number_input("II Smjena", 0, 100, get_v(dan, j, "II"), key=f"{prefix}_{dan}_{j}_2", disabled=onemoguci)
                             k3 = col3.number_input("III Smjena", 0, 100, get_v(dan, j, "III"), key=f"{prefix}_{dan}_{j}_3", disabled=onemoguci)
