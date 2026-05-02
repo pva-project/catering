@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from streamlit_gsheets import GSheetsConnection
 from datetime import datetime
+import time
 
 # --- 1. KONFIGURACIJA ---
 st.set_page_config(page_title="Catering Management", layout="centered")
@@ -56,8 +57,8 @@ else:
 
             with st.form(f"form_admin_{odabir_m}"):
                 c_a, c_b = st.columns(2)
-                novo_sedmica = c_a.text_input("📅 Period (npr. 04.05-10.05):", value=v_sedmica)
-                novo_rok = c_b.text_input("⏰ Rok (npr. Nedjelja 20h):", value=v_rok)
+                novo_sedmica = c_a.text_input("📅 Period:", value=v_sedmica)
+                novo_rok = c_b.text_input("⏰ Rok:", value=v_rok)
                 
                 nova_lista = [{"Dan": "Sedmica", "Jelo": novo_sedmica}, {"Dan": "Rok", "Jelo": novo_rok}]
                 for dan in dani_std:
@@ -71,7 +72,8 @@ else:
                 
                 if st.form_submit_button("💾 SAČUVAJ SVE IZMJENE"):
                     conn.update(spreadsheet=spreadsheet_url, worksheet=odabir_m, data=pd.DataFrame(nova_lista))
-                    st.success("Sačuvano!")
+                    st.success("✅ Meni sačuvan!")
+                    time.sleep(1)
                     st.rerun()
 
         with t1:
@@ -87,7 +89,8 @@ else:
                 df_next = ucitaj_meni_komplet("Meni_Naredni")
                 conn.update(spreadsheet=spreadsheet_url, worksheet="Meni_Trenutni", data=df_next)
                 conn.update(spreadsheet=spreadsheet_url, worksheet="Sheet1", data=pd.DataFrame(columns=["Firma","Dan","Jelo","Kolicina","Smjena"]))
-                st.success("Rotirano i resetovano!")
+                st.success("Sistem rotiran i očišćen!")
+                time.sleep(1)
                 st.rerun()
 
     # --- 6. KORISNIČKI PANEL ---
@@ -106,10 +109,8 @@ else:
 
             try:
                 df_sve = conn.read(spreadsheet=spreadsheet_url, worksheet="Sheet1", ttl=0).dropna(how='all')
-                moja_n = df_sve[df_sve['Firma'] == st.session_state['user']]
             except: 
                 df_sve = pd.DataFrame(columns=["Firma", "Dan", "Jelo", "Kolicina", "Smjena"])
-                moja_n = pd.DataFrame()
 
             with st.form(f"f_{prefix}"):
                 unose = []
@@ -125,11 +126,13 @@ else:
                         for j in jela:
                             st.write(f"**{j}**")
                             col1, col2, col3 = st.columns(3)
+                            
                             def get_v(d, jl, s):
-                                if not moja_n.empty:
-                                    v = moja_n[(moja_n['Dan']==f"{prefix}-{d}") & (moja_n['Jelo']==jl) & (moja_n['Smjena']==s)]['Kolicina'].tolist()
+                                if not df_sve.empty:
+                                    v = df_sve[(df_sve['Firma']==st.session_state['user']) & (df_sve['Dan']==f"{prefix}-{d}") & (df_sve['Jelo']==jl) & (df_sve['Smjena']==s)]['Kolicina'].tolist()
                                     return int(v[0]) if v else 0
                                 return 0
+                                
                             k1 = col1.number_input("I Smjena", 0, 100, get_v(dan, j, "I"), key=f"{prefix}_{dan}_{j}_1", disabled=onemoguci)
                             k2 = col2.number_input("II Smjena", 0, 100, get_v(dan, j, "II"), key=f"{prefix}_{dan}_{j}_2", disabled=onemoguci)
                             k3 = col3.number_input("III Smjena", 0, 100, get_v(dan, j, "III"), key=f"{prefix}_{dan}_{j}_3", disabled=onemoguci)
@@ -137,12 +140,15 @@ else:
                                 unose.append({"Firma": st.session_state['user'], "Dan": f"{prefix}-{dan}", "Jelo": j, "Kolicina": int(k), "Smjena": s})
                 
                 if st.form_submit_button("🚀 SAČUVAJ NARUDŽBU", use_container_width=True):
-                    # POPRAVKA: Pretvaranje kolone Dan u string pre pretrage
                     df_sve['Dan'] = df_sve['Dan'].astype(str)
                     mask = ~((df_sve['Firma'] == st.session_state['user']) & (df_sve['Dan'].str.startswith(prefix)))
                     final = pd.concat([df_sve[mask], pd.DataFrame([n for n in unose if n['Kolicina']>0])], ignore_index=True)
                     conn.update(spreadsheet=spreadsheet_url, worksheet="Sheet1", data=final)
-                    st.success("Uspješno sačuvano!")
+                    
+                    # POPRAVKA: Prikaz poruke i balona prije osvježavanja
+                    st.success("✅ Narudžba uspješno sačuvana!")
+                    st.balloons()
+                    time.sleep(2) # Sačekaj 2 sekunde da korisnik vidi poruku
                     st.rerun()
 
         with t_t: prikazi_formu("Meni_Trenutni", "Ova", True)
@@ -152,3 +158,4 @@ else:
                 curr_df = conn.read(spreadsheet=spreadsheet_url, worksheet="Sheet1", ttl=0)
                 st.dataframe(curr_df[curr_df['Firma'] == st.session_state['user']], use_container_width=True, hide_index=True)
             except: st.info("Nema narudžbi.")
+
