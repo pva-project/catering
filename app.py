@@ -19,10 +19,17 @@ users = {"admin": "admin123", "Lattonedil": "lattonedil321", "PVA Group": "pvagr
 try:
     df_raw = conn.read(spreadsheet=spreadsheet_url, worksheet="Meni", ttl=0)
     df_raw['Dan'] = df_raw['Dan'].astype(str).str.strip()
-    sed_tekst = df_raw[df_raw['Dan'] == 'Sedmica']['Jelo'].values if 'Sedmica' in df_raw['Dan'].values else "N/A"
-    rok_tekst = df_raw[df_raw['Dan'] == 'Rok']['Jelo'].values if 'Rok' in df_raw['Dan'].values else "N/A"
+    
+    # POPRAVKA: Čitanje teksta bez ArrowStringArray zagrada
+    sed_info = df_raw[df_raw['Dan'] == 'Sedmica']['Jelo'].values
+    rok_info = df_raw[df_raw['Dan'] == 'Rok']['Jelo'].values
+    
+    sed_tekst = sed_info[0] if len(sed_info) > 0 else "Nije uneseno"
+    rok_tekst = rok_info[0] if len(rok_info) > 0 else "Nije uneseno"
+    
     pravi_dani = ["Ponedjeljak", "Utorak", "Srijeda", "Četvrtak", "Petak", "Subota"]
-    meni = {dan: df_raw[df_raw['Dan'] == dan]['Jelo'].tolist() for dan in pravi_dani if not df_raw[df_raw['Dan'] == dan].empty}
+    df_jela_samo = df_raw[df_raw['Dan'].isin(pravi_dani)]
+    meni = {dan: df_jela_samo[df_jela_samo['Dan'] == dan]['Jelo'].tolist() for dan in pravi_dani if not df_jela_samo[df_jela_samo['Dan'] == dan].empty}
 except:
     st.error("Greška pri učitavanju menija.")
     st.stop()
@@ -32,7 +39,7 @@ if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
 
 if not st.session_state["logged_in"]:
-    st.markdown("<h1 style='text-align: center;'>🔐 Prijava</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 style='text-align: center;'>🔐 Prijava za Catering</h1>", unsafe_allow_html=True)
     with st.container(border=True):
         u = st.text_input("Korisničko ime")
         p = st.text_input("Lozinka", type="password")
@@ -54,25 +61,25 @@ else:
         
         with adm_t1:
             with st.expander("⚠️ Kraj sedmice (Arhiviraj)"):
-                st.warning("Ovo će prebaciti trenutne narudžbe u Arhivu i isprazniti glavni ekran.")
+                st.warning("Ovo će prebaciti narudžbe u Arhivu i isprazniti trenutnu tabelu.")
                 if st.button("📁 ARHIVIRAJ I RESETUJ"):
                     df_trenutno = conn.read(spreadsheet=spreadsheet_url, worksheet="Sheet1", ttl=0)
-                    df_arhiva = conn.read(spreadsheet=spreadsheet_url, worksheet="Arhiva", ttl=0)
-                    
-                    # Dodajemo današnji datum u arhivu da znamo kad je bilo
-                    df_trenutno['Datum_Arhive'] = datetime.now().strftime("%d.%m.%Y")
-                    novo_arhiva = pd.concat([df_arhiva, df_trenutno], ignore_index=True)
-                    
-                    conn.update(spreadsheet=spreadsheet_url, worksheet="Arhiva", data=novo_arhiva)
-                    conn.update(spreadsheet=spreadsheet_url, worksheet="Sheet1", data=pd.DataFrame(columns=["Firma", "Dan", "Jelo", "Kolicina", "Smjena"]))
-                    st.success("Narudžbe su uspješno arhivirane!")
-                    st.rerun()
+                    if not df_trenutno.empty:
+                        df_arhiva = conn.read(spreadsheet=spreadsheet_url, worksheet="Arhiva", ttl=0)
+                        df_trenutno['Datum_Arhive'] = datetime.now().strftime("%d.%m.%Y")
+                        novo_arhiva = pd.concat([df_arhiva, df_trenutno], ignore_index=True)
+                        conn.update(spreadsheet=spreadsheet_url, worksheet="Arhiva", data=novo_arhiva)
+                        conn.update(spreadsheet=spreadsheet_url, worksheet="Sheet1", data=pd.DataFrame(columns=["Firma", "Dan", "Jelo", "Kolicina", "Smjena"]))
+                        st.success("Narudžbe prebačene u Arhivu!")
+                        st.rerun()
+                    else: st.info("Tabela je već prazna.")
             
             df_n = conn.read(spreadsheet=spreadsheet_url, worksheet="Sheet1", ttl=0)
             if not df_n.empty:
-                dan_sel = st.selectbox("Dan:", pravi_dani)
-                st.table(df_n[df_n['Dan'] == dan_sel].groupby(['Jelo', 'Smjena'])['Kolicina'].sum().reset_index())
-            else: st.info("Nema novih narudžbi.")
+                dan_sel = st.selectbox("Izaberi dan:", pravi_dani)
+                zbir = df_n[df_n['Dan'] == dan_sel].groupby(['Jelo', 'Smjena'])['Kolicina'].sum().reset_index()
+                st.table(zbir)
+            else: st.info("Nema narudžbi.")
 
         with adm_t2:
             edited_meni = st.data_editor(df_raw, use_container_width=True, hide_index=True)
@@ -82,7 +89,7 @@ else:
                 st.rerun()
 
         with adm_t3:
-            st.subheader("Kompletna istorija svih narudžbi")
+            st.subheader("📂 Kompletna Arhiva")
             df_a = conn.read(spreadsheet=spreadsheet_url, worksheet="Arhiva", ttl=0)
             st.dataframe(df_a, use_container_width=True, hide_index=True)
 
@@ -101,7 +108,7 @@ else:
         except: df_sve, moja_n = pd.DataFrame(), pd.DataFrame()
 
         with t1:
-            with st.form("forma_v5"):
+            with st.form("forma_final"):
                 sve_n = []
                 for dan, jela in meni.items():
                     idx = dani_standard.index(dan)
@@ -130,7 +137,4 @@ else:
                     conn.update(spreadsheet=spreadsheet_url, worksheet="Sheet1", data=df_final)
                     st.success("Sačuvano!")
                     st.rerun()
-        
-        with t2:
-            # Firma vidi svoju istoriju iz trenutne sedmice (Sheet1)
-            st.dataframe(moja_n, use_container_width=True, hide_index=True)
+        with t2: st.dataframe(moja_n, use_container_width=True, hide_index=True)
