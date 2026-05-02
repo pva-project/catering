@@ -4,7 +4,7 @@ from streamlit_gsheets import GSheetsConnection
 from datetime import datetime
 
 # --- 1. KONFIGURACIJA ---
-st.set_page_config(page_title="Catering Narudžbe", layout="centered")
+st.set_page_config(page_title="Catering Sistem", layout="centered")
 
 spreadsheet_url = st.secrets["connections"]["gsheets"]["spreadsheet"]
 conn = st.connection("gsheets", type=GSheetsConnection)
@@ -13,26 +13,16 @@ dani_standard = ["Ponedjeljak", "Utorak", "Srijeda", "Četvrtak", "Petak", "Subo
 danasnji_dan_index = datetime.now().weekday()
 
 # --- 2. KORISNICI ---
-users = {
-    "admin": "admin123",
-    "Lattonedil": "lattonedil321",
-    "PVA Group": "pvagroup321",
-    "Esintec": "esintec321",
-    "ActivBH": "activbh321"
-}
+users = {"admin": "admin123", "Lattonedil": "lattonedil321", "PVA Group": "pvagroup321", "Esintec": "esintec321", "ActivBH": "activbh321"}
 
 # --- 3. DINAMIČKI MENI ---
 try:
     df_raw = conn.read(spreadsheet=spreadsheet_url, worksheet="Meni", ttl=0)
     df_raw['Dan'] = df_raw['Dan'].astype(str).str.strip()
-    
-    # Čišćenje prikaza za korisnike
-    sed_tekst = df_raw[df_raw['Dan'] == 'Sedmica']['Jelo'].values[0] if 'Sedmica' in df_raw['Dan'].values else "Nije uneseno"
-    rok_tekst = df_raw[df_raw['Dan'] == 'Rok']['Jelo'].values[0] if 'Rok' in df_raw['Dan'].values else "Nije uneseno"
-    
+    sed_tekst = df_raw[df_raw['Dan'] == 'Sedmica']['Jelo'].values if 'Sedmica' in df_raw['Dan'].values else "N/A"
+    rok_tekst = df_raw[df_raw['Dan'] == 'Rok']['Jelo'].values if 'Rok' in df_raw['Dan'].values else "N/A"
     pravi_dani = ["Ponedjeljak", "Utorak", "Srijeda", "Četvrtak", "Petak", "Subota"]
-    df_jela_samo = df_raw[df_raw['Dan'].isin(pravi_dani)]
-    meni = {dan: df_jela_samo[df_jela_samo['Dan'] == dan]['Jelo'].tolist() for dan in pravi_dani if not df_jela_samo[df_jela_samo['Dan'] == dan].empty}
+    meni = {dan: df_raw[df_raw['Dan'] == dan]['Jelo'].tolist() for dan in pravi_dani if not df_raw[df_raw['Dan'] == dan].empty}
 except:
     st.error("Greška pri učitavanju menija.")
     st.stop()
@@ -42,7 +32,7 @@ if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
 
 if not st.session_state["logged_in"]:
-    st.markdown("<h1 style='text-align: center;'>🔐 Prijava za Catering</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 style='text-align: center;'>🔐 Prijava</h1>", unsafe_allow_html=True)
     with st.container(border=True):
         u = st.text_input("Korisničko ime")
         p = st.text_input("Lozinka", type="password")
@@ -50,8 +40,7 @@ if not st.session_state["logged_in"]:
             if u in users and users[u] == p:
                 st.session_state["logged_in"], st.session_state["user"] = True, u
                 st.rerun()
-            else:
-                st.error("Pogrešni podaci")
+            else: st.error("Pogrešni podaci")
 else:
     st.sidebar.write(f"Korisnik: **{st.session_state['user']}**")
     if st.sidebar.button("Odjavi se", use_container_width=True):
@@ -61,32 +50,41 @@ else:
     # --- 5. ADMIN PANEL ---
     if st.session_state["user"] == "admin":
         st.title("👨‍🍳 Admin Upravljanje")
-        
-        adm_t1, adm_t2 = st.tabs(["📊 Pregled Kuhinje", "📝 Izmjena Menija"])
+        adm_t1, adm_t2, adm_t3 = st.tabs(["📊 Kuhinja", "📝 Meni", "📂 Arhiva"])
         
         with adm_t1:
-            # RESET DUGME
-            with st.expander("⚠️ Resetovanje narudžbi"):
-                if st.button("🗑️ OBRIŠI SVE NARUDŽBE"):
+            with st.expander("⚠️ Kraj sedmice (Arhiviraj)"):
+                st.warning("Ovo će prebaciti trenutne narudžbe u Arhivu i isprazniti glavni ekran.")
+                if st.button("📁 ARHIVIRAJ I RESETUJ"):
+                    df_trenutno = conn.read(spreadsheet=spreadsheet_url, worksheet="Sheet1", ttl=0)
+                    df_arhiva = conn.read(spreadsheet=spreadsheet_url, worksheet="Arhiva", ttl=0)
+                    
+                    # Dodajemo današnji datum u arhivu da znamo kad je bilo
+                    df_trenutno['Datum_Arhive'] = datetime.now().strftime("%d.%m.%Y")
+                    novo_arhiva = pd.concat([df_arhiva, df_trenutno], ignore_index=True)
+                    
+                    conn.update(spreadsheet=spreadsheet_url, worksheet="Arhiva", data=novo_arhiva)
                     conn.update(spreadsheet=spreadsheet_url, worksheet="Sheet1", data=pd.DataFrame(columns=["Firma", "Dan", "Jelo", "Kolicina", "Smjena"]))
-                    st.success("Tabela ispražnjena!")
+                    st.success("Narudžbe su uspješno arhivirane!")
                     st.rerun()
             
             df_n = conn.read(spreadsheet=spreadsheet_url, worksheet="Sheet1", ttl=0)
             if not df_n.empty:
                 dan_sel = st.selectbox("Dan:", pravi_dani)
                 st.table(df_n[df_n['Dan'] == dan_sel].groupby(['Jelo', 'Smjena'])['Kolicina'].sum().reset_index())
-            else: st.info("Nema narudžbi.")
+            else: st.info("Nema novih narudžbi.")
 
         with adm_t2:
-            st.subheader("Izmijeni jela, period i rok")
-            # Tabela koja se može uređivati direktno u aplikaciji
             edited_meni = st.data_editor(df_raw, use_container_width=True, hide_index=True)
-            
             if st.button("💾 SAČUVAJ NOVI MENI"):
                 conn.update(spreadsheet=spreadsheet_url, worksheet="Meni", data=edited_meni)
-                st.success("Meni je uspješno ažuriran u Google Tabeli!")
+                st.success("Meni ažuriran!")
                 st.rerun()
+
+        with adm_t3:
+            st.subheader("Kompletna istorija svih narudžbi")
+            df_a = conn.read(spreadsheet=spreadsheet_url, worksheet="Arhiva", ttl=0)
+            st.dataframe(df_a, use_container_width=True, hide_index=True)
 
     # --- 6. KORISNIČKI PANEL ---
     else:
@@ -95,7 +93,7 @@ else:
         c1.info(f"📅 **Sedmica:** {sed_tekst}")
         c2.warning(f"⏰ **Rok:** {rok_tekst}")
         
-        t1, t2 = st.tabs(["🛒 Narudžba", "📜 Istorija"])
+        t1, t2 = st.tabs(["🛒 Narudžba", "📜 Moja Istorija"])
         
         try:
             df_sve = conn.read(spreadsheet=spreadsheet_url, worksheet="Sheet1", ttl=0).dropna(how='all')
@@ -103,14 +101,14 @@ else:
         except: df_sve, moja_n = pd.DataFrame(), pd.DataFrame()
 
         with t1:
-            with st.form("forma_v4"):
+            with st.form("forma_v5"):
                 sve_n = []
                 for dan, jela in meni.items():
                     idx = dani_standard.index(dan)
                     onemoguci = (danasnji_dan_index <= 5 and danasnji_dan_index >= idx)
                     status = " 🔒" if onemoguci else " 🔓"
                     with st.container(border=True):
-                        st.markdown(f"**{dan}{status}**")
+                        st.markdown(f"#### 📅 {dan}{status}")
                         for jelo in jela:
                             st.write(f"**{jelo}**")
                             c1, c2, c3 = st.columns(3)
@@ -132,4 +130,7 @@ else:
                     conn.update(spreadsheet=spreadsheet_url, worksheet="Sheet1", data=df_final)
                     st.success("Sačuvano!")
                     st.rerun()
-        with t2: st.dataframe(moja_n, use_container_width=True, hide_index=True)
+        
+        with t2:
+            # Firma vidi svoju istoriju iz trenutne sedmice (Sheet1)
+            st.dataframe(moja_n, use_container_width=True, hide_index=True)
