@@ -11,10 +11,26 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 
 dani_std = ["Ponedjeljak", "Utorak", "Srijeda", "Četvrtak", "Petak", "Subota"]
 
-# --- 2. LOGIN ---
-users = {"admin": "admin123", "Lattonedil": "lat1", "PVA Group": "pva1", "Esintec": "esi1", "ActivBH": "act1"}
+# --- 2. KORISNICI (Originalni podaci) ---
+users = {
+    "admin": "admin123",
+    "Lattonedil": "lattonedil321",
+    "PVA Group": "pvagroup321",
+    "Esintec": "esintec321",
+    "ActivBH": "activbh321"
+}
 
-if "logged_in" not in st.session_state: st.session_state["logged_in"] = False
+# --- 3. DINAMIČKI MENI ---
+try:
+    df_meni_raw = conn.read(spreadsheet=spreadsheet_url, worksheet="Meni", ttl=0)
+    df_meni_raw['Dan'] = df_meni_raw['Dan'].astype(str).str.strip()
+except:
+    st.error("Greška: List 'Meni' mora imati kolone 'Dan', 'Jelo', 'Tip'.")
+    st.stop()
+
+# --- 4. LOGIN SISTEM (CENTRALNI) ---
+if "logged_in" not in st.session_state:
+    st.session_state["logged_in"] = False
 
 if not st.session_state["logged_in"]:
     st.markdown("<h1 style='text-align: center;'>🔐 Prijava za Catering</h1>", unsafe_allow_html=True)
@@ -23,19 +39,19 @@ if not st.session_state["logged_in"]:
         p = st.text_input("Lozinka", type="password")
         if st.button("Prijavi se", use_container_width=True):
             if u in users and users[u] == p:
-                st.session_state["logged_in"], st.session_state["user"] = True, u
+                st.session_state["logged_in"] = True
+                st.session_state["user"] = u
                 st.rerun()
-            else: st.error("Pogrešni podaci")
+            else:
+                st.error("Pogrešni podaci")
 else:
-    # --- 3. ČITANJE MENIJA ---
-    try:
-        df_meni_raw = conn.read(spreadsheet=spreadsheet_url, worksheet="Meni", ttl=0)
-        df_meni_raw['Dan'] = df_meni_raw['Dan'].astype(str).str.strip()
-    except:
-        st.error("Greška: List 'Meni' mora imati kolone 'Dan', 'Jelo', 'Tip'.")
-        st.stop()
+    # Sidebar za odjavu
+    st.sidebar.write(f"Ulogovani ste: **{st.session_state['user']}**")
+    if st.sidebar.button("Odjavi se", use_container_width=True):
+        st.session_state["logged_in"] = False
+        st.rerun()
 
-    # --- 4. ADMIN PANEL ---
+    # --- 5. ADMIN PANEL ---
     if st.session_state["user"] == "admin":
         st.title("👨‍🍳 Admin Panel")
         t_adm1, t_adm2, t_adm3 = st.tabs(["📊 Kuhinja", "📝 Meni Editor", "⚙️ Reset"])
@@ -44,7 +60,7 @@ else:
             df_n = conn.read(spreadsheet=spreadsheet_url, worksheet="Sheet1", ttl=0)
             if not df_n.empty:
                 d_sel = st.selectbox("Izaberi dan za kuhanje:", dani_std)
-                # Admin vidi narudžbe za TRENUTNU sedmicu (ono što se kuha)
+                # Prikaz narudžbi za TRENUTNU sedmicu
                 prikaz = df_n[df_n['Dan'] == f"Trenutna-{d_sel}"].groupby(['Jelo', 'Smjena'])['Kolicina'].sum().reset_index()
                 st.table(prikaz)
             else: st.info("Nema narudžbi.")
@@ -60,13 +76,8 @@ else:
                 conn.update(spreadsheet=spreadsheet_url, worksheet="Sheet1", data=pd.DataFrame(columns=["Firma","Dan","Jelo","Kolicina","Smjena"]))
                 st.success("Tabela ispražnjena!")
 
-    # --- 5. KORISNIČKI PANEL ---
+    # --- 6. KORISNIČKI PANEL ---
     else:
-        st.sidebar.write(f"Korisnik: **{st.session_state['user']}**")
-        if st.sidebar.button("Odjavi se"):
-            st.session_state["logged_in"] = False
-            st.rerun()
-
         st.title(f"🍴 {st.session_state['user']}")
         
         tab_t, tab_n, tab_h = st.tabs(["🍱 Trenutna Sedmica", "🚀 Naredna Sedmica", "📜 Istorija"])
@@ -86,7 +97,6 @@ else:
                         jela_dan = df_v[df_v['Dan'] == dan]['Jelo'].tolist()
                         for jelo in jela_dan:
                             st.markdown(f"**{jelo}**")
-                            # STABILNI IZGLED: 3 kolone za smjene jedna pored druge
                             c1, c2, c3 = st.columns(3)
                             
                             def get_v(d, j, s):
@@ -95,16 +105,14 @@ else:
                                     return int(f['Kolicina'].iloc[0]) if not f.empty else 0
                                 return 0
 
-                            k1 = c1.number_input("I Smjena", 0, 100, get_v(dan, jelo, "I"), key=f"{prefix}_{dan}_{jelo}_1")
-                            k2 = c2.number_input("II Smjena", 0, 100, get_v(dan, jelo, "II"), key=f"{prefix}_{dan}_{jelo}_2")
-                            k3 = c3.number_input("III Smjena", 0, 100, get_v(dan, jelo, "III"), key=f"{prefix}_{dan}_{jelo}_3")
+                            k1 = c1.number_input("I Smjena", 0, 100, step=1, value=get_v(dan, jelo, "I"), key=f"{prefix}_{dan}_{jelo}_1")
+                            k2 = c2.number_input("II Smjena", 0, 100, step=1, value=get_v(dan, jelo, "II"), key=f"{prefix}_{dan}_{jelo}_2")
+                            k3 = c3.number_input("III Smjena", 0, 100, step=1, value=get_v(dan, jelo, "III"), key=f"{prefix}_{dan}_{jelo}_3")
                             
                             for k, smj in zip([k1, k2, k3], ["I", "II", "III"]):
                                 unose.append({"Firma": st.session_state['user'], "Dan": f"{prefix}-{dan}", "Jelo": jelo, "Kolicina": int(k), "Smjena": smj})
-                        st.markdown("---")
                 
                 if st.form_submit_button(f"🚀 SAČUVAJ {tip_sedmice.upper()}", use_container_width=True):
-                    # Brišemo stare unose samo za taj tip sedmice (prefix)
                     dani_za_prefix = [f"{prefix}-{d}" for d in dani_std]
                     mask = ~((df_sve['Firma'] == st.session_state['user']) & (df_sve['Dan'].isin(dani_za_prefix)))
                     novi_podaci = [n for n in unose if n['Kolicina'] > 0]
