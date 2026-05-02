@@ -4,33 +4,34 @@ from streamlit_gsheets import GSheetsConnection
 from datetime import datetime
 import time
 
-# --- 1. KONFIGURACIJA I NASILNO SKRIVANJE UI ELEMENATA ---
+# --- 1. KONFIGURACIJA I UKLANJANJE SVIH STREAMLIT IKONA ---
 st.set_page_config(page_title="Catering Management", layout="centered")
 
-# NAJJAČI CSS DO SADA - POKRIVA SVE VERZIJE STREAMLITA
+# Nuclear CSS: Cilja header, footer, krunicu i sve dinamičke klase
 ultimate_hide_style = """
     <style>
-    /* Sakrij gornju traku (Header) */
+    /* Sakrij gornji dio (Deploy, GitHub, Menu) */
     [data-testid="stHeader"] {display: none !important;}
     header {visibility: hidden !important; height: 0px !important;}
     
-    /* Sakrij krunicu, GitHub, Fork i sve gumbe u desnom uglu */
-    .stAppDeployButton {display: none !important;}
-    button[title="View source on GitHub"] {display: none !important;}
-    #MainMenu {visibility: hidden !important;}
-    .st-emotion-cache-zq59db {display: none !important;}
-    .st-emotion-cache-15ec669 {display: none !important;}
-    .st-emotion-cache-12m0610 {display: none !important;}
-    
-    /* Sakrij footer (Made with Streamlit) */
+    /* Sakrij donji dio (Made with Streamlit logo i tekst) */
     footer {display: none !important; visibility: hidden !important;}
+    [data-testid="stFooter"] {display: none !important;}
     
-    /* Ukloni sav prazan prostor na vrhu */
-    .block-container {padding-top: 0rem !important; padding-bottom: 0rem !important;}
-    
-    /* Sakrij statusne widgete i toolbar-ove */
+    /* Sakrij krunicu (Deploy dugme) i statusni widget */
+    .stAppDeployButton {display: none !important;}
     [data-testid="stStatusWidget"] {display: none !important;}
+    
+    /* Sakrij toolbar i sve plutajuće elemente */
     div[data-testid="stToolbar"] {display: none !important;}
+    button[title="View source on GitHub"] {display: none !important;}
+    
+    /* Ukloni prazan prostor na vrhu i dnu */
+    .block-container {padding-top: 1rem !important; padding-bottom: 0rem !important;}
+    
+    /* Dodatni fix za mobilne ikone */
+    img[src*="streamlit_logo"] {display: none !important;}
+    #MainMenu {visibility: hidden !important;}
     </style>
 """
 st.markdown(ultimate_hide_style, unsafe_allow_html=True)
@@ -70,7 +71,7 @@ def izracunaj_prosjeke():
     p_kuvari = df_o.groupby('Kuvar')['Numericka'].mean().round(1).to_dict() if "Kuvar" in df_o.columns else {}
     return p_jela, p_kuvari
 
-# --- 4. LOGIN ---
+# --- 4. LOGIN SISTEM ---
 if "logged_in" not in st.session_state: st.session_state["logged_in"] = False
 
 if not st.session_state["logged_in"]:
@@ -170,6 +171,7 @@ else:
                 unose = []
                 for dan in dani_std:
                     idx = dani_std.index(dan)
+                    # Zaključavanje ako je dan prošao
                     onemoguci = (zakljucaj and danasnji_dan_index >= idx)
                     status = " 🔒" if onemoguci else " 🔓"
                     with st.container(border=True):
