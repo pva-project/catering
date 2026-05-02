@@ -6,6 +6,18 @@ import time
 
 # --- 1. KONFIGURACIJA ---
 st.set_page_config(page_title="Catering Management", layout="centered")
+
+# CSS za sakrivanje ikonice krunice, menija i footera
+hide_st_style = """
+            <style>
+            #MainMenu {visibility: hidden;}
+            footer {visibility: hidden;}
+            header {visibility: hidden;}
+            .stAppDeployButton {display: none;}
+            </style>
+            """
+st.markdown(hide_st_style, unsafe_allow_html=True)
+
 spreadsheet_url = st.secrets["connections"]["gsheets"]["spreadsheet"]
 conn = st.connection("gsheets", type=GSheetsConnection)
 
@@ -18,19 +30,26 @@ users = {"admin": "admin123", "Lattonedil": "lattonedil321", "PVA Group": "pvagr
 
 # --- 3. FUNKCIJE ---
 def ucitaj_sheet(sheet_name):
+    # Definišemo kolone za svaki sheet kako bi izbjegli greške ako su prazni
+    cols = {
+        "Sheet1": ["Firma", "Dan", "Jelo", "Kolicina", "Smjena"],
+        "Ocjene": ["Firma", "Jelo", "Ocjena", "Komentar", "Kuvar"],
+        "Meni_Trenutni": ["Dan", "Jelo"],
+        "Meni_Naredni": ["Dan", "Jelo"]
+    }
     try:
         df = conn.read(spreadsheet=spreadsheet_url, worksheet=sheet_name, ttl=0)
         df = df.dropna(how='all')
-        # Ako tabela nema potrebne kolone, napravi ih
-        if "Dan" not in df.columns or "Jelo" not in df.columns:
-            return pd.DataFrame(columns=["Dan", "Jelo"])
+        if df.empty:
+            return pd.DataFrame(columns=cols.get(sheet_name, ["Dan", "Jelo"]))
         return df
     except: 
-        return pd.DataFrame(columns=["Dan", "Jelo"])
+        return pd.DataFrame(columns=cols.get(sheet_name, ["Dan", "Jelo"]))
 
 def izracunaj_prosjeke():
     df_o = ucitaj_sheet("Ocjene")
-    if df_o.empty or "Ocjena" not in df_o.columns: return {}, {}
+    if df_o.empty or "Ocjena" not in df_o.columns or "Jelo" not in df_o.columns: 
+        return {}, {}
     df_o['Numericka'] = df_o['Ocjena'].map(mapa_ocjena)
     p_jela = df_o.groupby('Jelo')['Numericka'].mean().round(1).to_dict()
     p_kuvari = df_o.groupby('Kuvar')['Numericka'].mean().round(1).to_dict() if "Kuvar" in df_o.columns else {}
@@ -65,7 +84,6 @@ else:
             odabir_m = st.radio("Koji meni mijenjaš?", ["Meni_Trenutni", "Meni_Naredni"], horizontal=True)
             df_m = ucitaj_sheet(odabir_m)
             
-            # Sigurno izvlačenje info redova
             v_sed = df_m[df_m['Dan'] == 'Sedmica']['Jelo'].values[0] if not df_m[df_m['Dan'] == 'Sedmica'].empty else ""
             v_rok = df_m[df_m['Dan'] == 'Rok']['Jelo'].values[0] if not df_m[df_m['Dan'] == 'Rok'].empty else ""
             v_kuv = df_m[df_m['Dan'] == 'Kuvar']['Jelo'].values[0] if not df_m[df_m['Dan'] == 'Kuvar'].empty else ""
@@ -103,7 +121,7 @@ else:
             if not df_nar.empty and "Dan" in df_nar.columns:
                 d_sel = st.selectbox("Dan za kuhanje:", dani_std)
                 prikaz = df_nar[df_nar['Dan'] == f"Ova-{d_sel}"].groupby(['Jelo', 'Smjena'])['Kolicina'].sum().reset_index()
-                st.table(prikaz)
+                st.dataframe(prikaz, use_container_width=True, hide_index=True)
             else: st.info("Nema novih narudžbi.")
 
         with t_a4:
@@ -137,7 +155,8 @@ else:
                 unose = []
                 for dan in dani_std:
                     idx = dani_std.index(dan)
-                    onemoguci = (zakljucaj and danasnji_dan_index <= 5 and danasnji_dan_index >= idx)
+                    # Zaključavanje: ako je dan već prošao (danasnji_dan_index >= idx)
+                    onemoguci = (zakljucaj and danasnji_dan_index >= idx)
                     status = " 🔒" if onemoguci else " 🔓"
                     with st.container(border=True):
                         st.markdown(f"#### 📅 {dan}{status}")
@@ -146,16 +165,18 @@ else:
                             prosjek = p_jela.get(j, None)
                             st.write(f"**{j}** {f'(⭐ {prosjek})' if prosjek else '(🆕)'}")
                             col1, col2, col3 = st.columns(3)
+                            
                             def get_v(d, jl, s):
                                 if not df_sve.empty and "Firma" in df_sve.columns:
                                     v = df_sve[(df_sve['Firma']==st.session_state['user']) & (df_sve['Dan']==f"{prefix}-{d}") & (df_sve['Jelo']==jl) & (df_sve['Smjena']==s)]['Kolicina'].tolist()
                                     return int(v[0]) if v else 0
                                 return 0
+
                             k1 = col1.number_input("I Smjena", 0, 100, get_v(dan, j, "I"), key=f"{prefix}_{dan}_{j}_1", disabled=onemoguci)
                             k2 = col2.number_input("II Smjena", 0, 100, get_v(dan, j, "II"), key=f"{prefix}_{dan}_{j}_2", disabled=onemoguci)
                             k3 = col3.number_input("III Smjena", 0, 100, get_v(dan, j, "III"), key=f"{prefix}_{dan}_{j}_3", disabled=onemoguci)
                             for k, s in zip([k1, k2, k3], ["I", "II", "III"]):
-                                if k >= 0: unose.append({"Firma": st.session_state['user'], "Dan": f"{prefix}-{dan}", "Jelo": j, "Kolicina": int(k), "Smjena": s})
+                                unose.append({"Firma": st.session_state['user'], "Dan": f"{prefix}-{dan}", "Jelo": j, "Kolicina": int(k), "Smjena": s})
                 
                 if st.form_submit_button("🚀 SAČUVAJ NARUDŽBU", use_container_width=True):
                     df_sve['Dan'] = df_sve['Dan'].astype(str)
