@@ -100,7 +100,6 @@ else:
             info_sed = df_m[df_m['Dan'] == 'Sedmica']['Jelo'].values[0] if 'Sedmica' in df_m['Dan'].values else "N/A"
             info_rok = df_m[df_m['Dan'] == 'Rok']['Jelo'].values[0] if 'Rok' in df_m['Dan'].values else "N/A"
             
-            # RAZLIČITE BOJE KAO PRIJE
             c1, c2 = st.columns(2)
             c1.info(f"📅 **Period:** {info_sed}")
             c2.warning(f"⏰ **Rok:** {info_rok}")
@@ -108,7 +107,9 @@ else:
             try:
                 df_sve = conn.read(spreadsheet=spreadsheet_url, worksheet="Sheet1", ttl=0).dropna(how='all')
                 moja_n = df_sve[df_sve['Firma'] == st.session_state['user']]
-            except: df_sve, moja_n = pd.DataFrame(), pd.DataFrame()
+            except: 
+                df_sve = pd.DataFrame(columns=["Firma", "Dan", "Jelo", "Kolicina", "Smjena"])
+                moja_n = pd.DataFrame()
 
             with st.form(f"f_{prefix}"):
                 unose = []
@@ -132,12 +133,14 @@ else:
                             k1 = col1.number_input("I Smjena", 0, 100, get_v(dan, j, "I"), key=f"{prefix}_{dan}_{j}_1", disabled=onemoguci)
                             k2 = col2.number_input("II Smjena", 0, 100, get_v(dan, j, "II"), key=f"{prefix}_{dan}_{j}_2", disabled=onemoguci)
                             k3 = col3.number_input("III Smjena", 0, 100, get_v(dan, j, "III"), key=f"{prefix}_{dan}_{j}_3", disabled=onemoguci)
-                            for k, smj in zip([k1, k2, k3], ["I", "II", "III"]):
-                                unose.append({"Firma": st.session_state['user'], "Dan": f"{prefix}-{dan}", "Jelo": j, "Kolicina": int(k), "Smjena": smj})
+                            for k, s in zip([k1, k2, k3], ["I", "II", "III"]):
+                                unose.append({"Firma": st.session_state['user'], "Dan": f"{prefix}-{dan}", "Jelo": j, "Kolicina": int(k), "Smjena": s})
                 
                 if st.form_submit_button("🚀 SAČUVAJ NARUDŽBU", use_container_width=True):
+                    # POPRAVKA: Pretvaranje kolone Dan u string pre pretrage
+                    df_sve['Dan'] = df_sve['Dan'].astype(str)
                     mask = ~((df_sve['Firma'] == st.session_state['user']) & (df_sve['Dan'].str.startswith(prefix)))
-                    final = pd.concat([df_sve[mask] if not df_sve.empty else df_sve, pd.DataFrame([n for n in unose if n['Kolicina']>0])], ignore_index=True)
+                    final = pd.concat([df_sve[mask], pd.DataFrame([n for n in unose if n['Kolicina']>0])], ignore_index=True)
                     conn.update(spreadsheet=spreadsheet_url, worksheet="Sheet1", data=final)
                     st.success("Uspješno sačuvano!")
                     st.rerun()
@@ -146,5 +149,6 @@ else:
         with t_n: prikazi_formu("Meni_Naredni", "Naredna", False)
         with t_h: 
             try:
-                st.dataframe(conn.read(spreadsheet=spreadsheet_url, worksheet="Sheet1", ttl=0)[lambda df: df['Firma'] == st.session_state['user']], use_container_width=True, hide_index=True)
+                curr_df = conn.read(spreadsheet=spreadsheet_url, worksheet="Sheet1", ttl=0)
+                st.dataframe(curr_df[curr_df['Firma'] == st.session_state['user']], use_container_width=True, hide_index=True)
             except: st.info("Nema narudžbi.")
