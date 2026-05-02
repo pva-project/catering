@@ -7,18 +7,27 @@ import time
 # --- 1. KONFIGURACIJA I NASILNO SKRIVANJE UI ELEMENATA ---
 st.set_page_config(page_title="Catering Management", layout="centered")
 
-# Agresivni CSS za potpuno uklanjanje krunice, menija i fusnote
+# TOTALNO SKRIVANJE - NAJJAČA VERZIJA
 hide_st_style = """
             <style>
-            #MainMenu {visibility: hidden !important;}
-            footer {visibility: hidden !important;}
-            header {visibility: hidden !important;}
-            /* Sakriva krunicu (Deploy dugme) */
-            .stAppDeployButton {display: none !important;}
-            /* Sakriva toolbar skroz gore desno */
+            /* 1. Sakrij cijeli header (gdje je Fork, GitHub, Menu) */
+            header {visibility: hidden !important; height: 0px !important;}
             [data-testid="stHeader"] {display: none !important;}
-            /* Dodatno sakrivanje za mobilne uređaje */
+            
+            /* 2. Sakrij footer (Made with Streamlit) */
+            footer {visibility: hidden !important;}
+            
+            /* 3. Sakrij krunicu (Deploy dugme) i sve plutajuće dugmiće desno */
+            .stAppDeployButton {display: none !important; visibility: hidden !important;}
+            button[title="View source on GitHub"] {display: none !important;}
+            
+            /* 4. Opšte čišćenje za mobilne uređaje */
+            #MainMenu {visibility: hidden !important;}
             .st-emotion-cache-zq59db {display: none !important;}
+            .st-emotion-cache-15ec669 {display: none !important;}
+            
+            /* 5. Sakrij statusni widget (ako se pojavi u uglu) */
+            [data-testid="stStatusWidget"] {display: none !important;}
             </style>
             """
 st.markdown(hide_st_style, unsafe_allow_html=True)
