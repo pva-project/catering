@@ -4,7 +4,7 @@ from streamlit_gsheets import GSheetsConnection
 from datetime import datetime
 
 # --- 1. KONFIGURACIJA ---
-st.set_page_config(page_title="Catering Sistem", layout="centered")
+st.set_page_config(page_title="Catering Management", layout="centered")
 spreadsheet_url = st.secrets["connections"]["gsheets"]["spreadsheet"]
 conn = st.connection("gsheets", type=GSheetsConnection)
 
@@ -12,27 +12,20 @@ dani_std = ["Ponedjeljak", "Utorak", "Srijeda", "Četvrtak", "Petak", "Subota"]
 danasnji_dan_index = datetime.now().weekday()
 
 # --- 2. KORISNICI ---
-users = {
-    "admin": "admin123",
-    "Lattonedil": "lattonedil321",
-    "PVA Group": "pvagroup321",
-    "Esintec": "esintec321",
-    "ActivBH": "activbh321"
-}
+users = {"admin": "admin123", "Lattonedil": "lattonedil321", "PVA Group": "pvagroup321", "Esintec": "esintec321", "ActivBH": "activbh321"}
 
-# --- 3. ČITANJE OBA MENIJA ---
+# --- 3. ČITANJE MENIJA ---
 try:
-    df_trenutni = conn.read(spreadsheet=spreadsheet_url, worksheet="Meni_Trenutni", ttl=0)
-    df_naredni = conn.read(spreadsheet=spreadsheet_url, worksheet="Meni_Naredni", ttl=0)
+    df_t = conn.read(spreadsheet=spreadsheet_url, worksheet="Meni_Trenutni", ttl=0)
+    df_n = conn.read(spreadsheet=spreadsheet_url, worksheet="Meni_Naredni", ttl=0)
     
-    # Pomoćna funkcija za pretvaranje u rečnik
-    def formatiraj(df):
+    def format_meni(df):
         return {dan: df[df['Dan'] == dan]['Jelo'].tolist() for dan in dani_std if not df[df['Dan'] == dan].empty}
 
-    meni_t = formatiraj(df_trenutni)
-    meni_n = formatiraj(df_naredni)
+    meni_t = format_meni(df_t)
+    meni_n = format_meni(df_n)
 except:
-    st.error("Greška: Provjerite listove 'Meni_Trenutni' i 'Meni_Naredni' u Google Tabeli.")
+    st.error("Greška: Provjerite listove 'Meni_Trenutni' i 'Meni_Naredni' u Google Sheets.")
     st.stop()
 
 # --- 4. LOGIN ---
@@ -53,36 +46,39 @@ else:
     # --- 5. ADMIN PANEL ---
     if st.session_state["user"] == "admin":
         st.title("👨‍🍳 Admin Upravljanje")
-        t_adm1, t_adm2, t_adm3 = st.tabs(["📊 Kuhinja", "📝 Uredi Menije", "⚙️ Reset"])
+        t1, t2, t3 = st.tabs(["📊 Kuhinja", "📝 Uredi Menije", "🔄 Rotacija Sedmica"])
         
-        with t_adm1:
-            df_n = conn.read(spreadsheet=spreadsheet_url, worksheet="Sheet1", ttl=0)
-            if not df_n.empty:
+        with t1:
+            df_nar = conn.read(spreadsheet=spreadsheet_url, worksheet="Sheet1", ttl=0)
+            if not df_nar.empty:
                 d_sel = st.selectbox("Izaberi dan:", dani_std)
-                # Admin vidi narudžbe za TRENUTNU sedmicu (ono što se kuha)
-                prikaz = df_n[df_n['Dan'] == f"Ova-{d_sel}"].groupby(['Jelo', 'Smjena'])['Kolicina'].sum().reset_index()
-                st.table(prikaz)
+                st.table(df_nar[df_nar['Dan'] == f"Ova-{d_sel}"].groupby(['Jelo', 'Smjena'])['Kolicina'].sum().reset_index())
             else: st.info("Nema narudžbi.")
 
-        with t_adm2:
-            st.subheader("📝 Ova Sedmica")
-            ed_t = st.data_editor(df_trenutni, use_container_width=True, hide_index=True, key="ed_t")
-            if st.button("💾 Sačuvaj Trenutni Meni"):
+        with t2:
+            st.subheader("📝 Trenutni Meni (Ova sedmica)")
+            ed_t = st.data_editor(df_t, use_container_width=True, hide_index=True, key="ed_t")
+            if st.button("💾 Snimi Trenutni"):
                 conn.update(spreadsheet=spreadsheet_url, worksheet="Meni_Trenutni", data=ed_t)
-                st.success("Trenutni meni ažuriran!")
+                st.rerun()
             
             st.divider()
-            
-            st.subheader("📝 Naredna Sedmica")
-            ed_n = st.data_editor(df_naredni, use_container_width=True, hide_index=True, key="ed_n")
-            if st.button("💾 Sačuvaj Naredni Meni"):
+            st.subheader("📝 Naredni Meni (Iduća sedmica)")
+            ed_n = st.data_editor(df_n, use_container_width=True, hide_index=True, key="ed_n")
+            if st.button("💾 Snimi Naredni"):
                 conn.update(spreadsheet=spreadsheet_url, worksheet="Meni_Naredni", data=ed_n)
-                st.success("Naredni meni ažuriran!")
+                st.rerun()
 
-        with t_adm3:
-            if st.button("🗑️ RESETUJ NARUDŽBE (Kraj sedmice)"):
+        with t3:
+            st.header("🔄 Kraj Sedmice")
+            st.warning("Ova opcija će jela iz 'Naredne' prebaciti u 'Trenutnu', a narudžbe obrisati.")
+            if st.button("🚀 IZVRŠI ROTACIJU I RESET"):
+                # 1. Naredni meni postaje Trenutni
+                conn.update(spreadsheet=spreadsheet_url, worksheet="Meni_Trenutni", data=df_n)
+                # 2. Reset Sheet1 (Narudžbe)
                 conn.update(spreadsheet=spreadsheet_url, worksheet="Sheet1", data=pd.DataFrame(columns=["Firma","Dan","Jelo","Kolicina","Smjena"]))
-                st.success("Sve narudžbe obrisane!")
+                st.success("Uspješno! Sada upišite nova jela za 'Narednu' sedmicu.")
+                st.rerun()
 
     # --- 6. KORISNIČKI PANEL ---
     else:
@@ -95,15 +91,14 @@ else:
             moja_n = df_sve[df_sve['Firma'] == st.session_state['user']]
         except: df_sve, moja_n = pd.DataFrame(), pd.DataFrame()
 
-        def forma(m_dict, prefix, zakljucaj):
+        def prikazi(m_dict, prefix, zakljucaj):
             with st.form(f"f_{prefix}"):
                 unose = []
                 for dan in dani_std:
                     onemoguci = False
                     status = " 🔓"
                     if zakljucaj and danasnji_dan_index <= 5:
-                        if danasnji_dan_index >= dani_std.index(dan):
-                            onemoguci, status = True, " 🔒"
+                        if danasnji_dan_index >= dani_std.index(dan): onemoguci, status = True, " 🔒"
 
                     with st.container(border=True):
                         st.markdown(f"#### 📅 {dan}{status}")
@@ -122,7 +117,7 @@ else:
                             for k, s in zip([k1, k2, k3], ["I", "II", "III"]):
                                 unose.append({"Firma": st.session_state['user'], "Dan": f"{prefix}-{dan}", "Jelo": j, "Kolicina": int(k), "Smjena": s})
                 
-                if st.form_submit_button(f"🚀 SAČUVAJ"):
+                if st.form_submit_button("🚀 SAČUVAJ"):
                     pref_dani = [f"{prefix}-{d}" for d in dani_std]
                     mask = ~((df_sve['Firma'] == st.session_state['user']) & (df_sve['Dan'].isin(pref_dani)))
                     final = pd.concat([df_sve[mask] if not df_sve.empty else df_sve, pd.DataFrame([n for n in unose if n['Kolicina']>0])], ignore_index=True)
@@ -130,6 +125,6 @@ else:
                     st.success("Sačuvano!")
                     st.rerun()
 
-        with tab_t: forma(meni_t, "Ova", True)
-        with tab_n: forma(meni_n, "Naredna", False)
+        with tab_t: prikazi(meni_t, "Ova", True)
+        with tab_n: prikazi(meni_n, "Naredna", False)
         with tab_h: st.dataframe(moja_n, use_container_width=True, hide_index=True)
