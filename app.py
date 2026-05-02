@@ -20,16 +20,21 @@ users = {"admin": "admin123", "Lattonedil": "lattonedil321", "PVA Group": "pvagr
 def ucitaj_sheet(sheet_name):
     try:
         df = conn.read(spreadsheet=spreadsheet_url, worksheet=sheet_name, ttl=0)
-        return df.dropna(how='all')
-    except: return pd.DataFrame()
+        df = df.dropna(how='all')
+        # Ako tabela nema potrebne kolone, napravi ih
+        if "Dan" not in df.columns or "Jelo" not in df.columns:
+            return pd.DataFrame(columns=["Dan", "Jelo"])
+        return df
+    except: 
+        return pd.DataFrame(columns=["Dan", "Jelo"])
 
 def izracunaj_prosjeke():
     df_o = ucitaj_sheet("Ocjene")
-    if df_o.empty: return {}, {}
+    if df_o.empty or "Ocjena" not in df_o.columns: return {}, {}
     df_o['Numericka'] = df_o['Ocjena'].map(mapa_ocjena)
-    prosjeci_jela = df_o.groupby('Jelo')['Numericka'].mean().round(1).to_dict()
-    prosjeci_kuvara = df_o.groupby('Kuvar')['Numericka'].mean().round(1).to_dict()
-    return prosjeci_jela, prosjeci_kuvara
+    p_jela = df_o.groupby('Jelo')['Numericka'].mean().round(1).to_dict()
+    p_kuvari = df_o.groupby('Kuvar')['Numericka'].mean().round(1).to_dict() if "Kuvar" in df_o.columns else {}
+    return p_jela, p_kuvari
 
 # --- 4. LOGIN ---
 if "logged_in" not in st.session_state: st.session_state["logged_in"] = False
@@ -56,20 +61,22 @@ else:
         t_a1, t_a2, t_a3, t_a4 = st.tabs(["📊 Kuhinja", "📝 Izmjena Menija", "⭐ Ocjene & Kuvari", "🔄 Reset"])
         
         with t_a2:
-            st.subheader("Uredi jela, rokove i kuvare")
-            odabir_m = st.radio("Meni:", ["Meni_Trenutni", "Meni_Naredni"], horizontal=True)
+            st.subheader("Izmijeni jela, rokove i kuvare")
+            odabir_m = st.radio("Koji meni mijenjaš?", ["Meni_Trenutni", "Meni_Naredni"], horizontal=True)
             df_m = ucitaj_sheet(odabir_m)
-            v_sed = df_m[df_m['Dan'] == 'Sedmica']['Jelo'].values[0] if 'Sedmica' in df_m['Dan'].values else ""
-            v_rok = df_m[df_m['Dan'] == 'Rok']['Jelo'].values[0] if 'Rok' in df_m['Dan'].values else ""
-            v_kuvar = df_m[df_m['Dan'] == 'Kuvar']['Jelo'].values[0] if 'Kuvar' in df_m['Dan'].values else ""
+            
+            # Sigurno izvlačenje info redova
+            v_sed = df_m[df_m['Dan'] == 'Sedmica']['Jelo'].values[0] if not df_m[df_m['Dan'] == 'Sedmica'].empty else ""
+            v_rok = df_m[df_m['Dan'] == 'Rok']['Jelo'].values[0] if not df_m[df_m['Dan'] == 'Rok'].empty else ""
+            v_kuv = df_m[df_m['Dan'] == 'Kuvar']['Jelo'].values[0] if not df_m[df_m['Dan'] == 'Kuvar'].empty else ""
 
             with st.form(f"form_admin_{odabir_m}"):
                 c1, c2, c3 = st.columns(3)
                 n_sed = c1.text_input("📅 Period:", value=v_sed)
                 n_rok = c2.text_input("⏰ Rok:", value=v_rok)
-                n_kuvar = c3.text_input("👨‍🍳 Glavni kuvar:", value=v_kuvar)
+                n_kuv = c3.text_input("👨‍🍳 Glavni kuvar:", value=v_kuv)
                 
-                nova_lista = [{"Dan": "Sedmica", "Jelo": n_sed}, {"Dan": "Rok", "Jelo": n_rok}, {"Dan": "Kuvar", "Jelo": n_kuvar}]
+                nova_lista = [{"Dan": "Sedmica", "Jelo": n_sed}, {"Dan": "Rok", "Jelo": n_rok}, {"Dan": "Kuvar", "Jelo": n_kuv}]
                 for dan in dani_std:
                     st.write(f"**{dan}**")
                     postojeca = df_m[df_m['Dan'] == dan]['Jelo'].tolist()
@@ -78,6 +85,7 @@ else:
                     j3 = st.text_input(f"Jelo 3", value=postojeca[2] if len(postojeca) > 2 else "", key=f"{dan}_3")
                     for j in [j1, j2, j3]:
                         if j.strip(): nova_lista.append({"Dan": dan, "Jelo": j.strip()})
+                
                 if st.form_submit_button("💾 SAČUVAJ SVE"):
                     conn.update(spreadsheet=spreadsheet_url, worksheet=odabir_m, data=pd.DataFrame(nova_lista))
                     st.success("Sačuvano!"); time.sleep(1); st.rerun()
@@ -86,44 +94,43 @@ else:
             st.subheader("⭐ Rang lista kuvara")
             _, p_kuvari = izracunaj_prosjeke()
             if p_kuvari:
-                for k, v in p_kuvari.items():
-                    st.write(f"👨‍🍳 **{k}**: {v} ⭐")
-            
+                for k, v in p_kuvari.items(): st.write(f"👨‍🍳 **{k}**: {v} ⭐")
             st.divider()
-            st.subheader("Sve ocjene")
             st.dataframe(ucitaj_sheet("Ocjene"), use_container_width=True, hide_index=True)
 
-        # (Kuhinja i Reset tabovi ostaju isti kao prije...)
         with t_a1:
             df_nar = ucitaj_sheet("Sheet1")
-            if not df_nar.empty:
+            if not df_nar.empty and "Dan" in df_nar.columns:
                 d_sel = st.selectbox("Dan za kuhanje:", dani_std)
-                st.table(df_nar[df_nar['Dan'] == f"Ova-{d_sel}"].groupby(['Jelo', 'Smjena'])['Kolicina'].sum().reset_index())
+                prikaz = df_nar[df_nar['Dan'] == f"Ova-{d_sel}"].groupby(['Jelo', 'Smjena'])['Kolicina'].sum().reset_index()
+                st.table(prikaz)
+            else: st.info("Nema novih narudžbi.")
+
         with t_a4:
-            if st.button("🚀 ROTACIJA SEDMICA"):
+            if st.button("🚀 IZVRŠI ROTACIJU SEDMICA"):
                 df_next = ucitaj_sheet("Meni_Naredni")
-                conn.update(spreadsheet=spreadsheet_url, worksheet="Meni_Trenutni", data=df_next)
-                conn.update(spreadsheet=spreadsheet_url, worksheet="Sheet1", data=pd.DataFrame(columns=["Firma","Dan","Jelo","Kolicina","Smjena"]))
-                st.success("Rotirano!"); time.sleep(1); st.rerun()
+                if not df_next.empty:
+                    conn.update(spreadsheet=spreadsheet_url, worksheet="Meni_Trenutni", data=df_next)
+                    conn.update(spreadsheet=spreadsheet_url, worksheet="Sheet1", data=pd.DataFrame(columns=["Firma","Dan","Jelo","Kolicina","Smjena"]))
+                    st.success("Sistem rotiran!"); time.sleep(1); st.rerun()
 
     # --- 6. KORISNIČKI PANEL ---
     else:
         st.title(f"🍴 {st.session_state['user']}")
         t_t, t_n, t_h, t_o = st.tabs(["🍱 Ova Sedmica", "🚀 Naredna Sedmica", "📜 Istorija", "⭐ Ocijeni"])
-        
         p_jela, _ = izracunaj_prosjeke()
 
         def prikazi_formu(sheet_name, prefix, zakljucaj):
             df_m = ucitaj_sheet(sheet_name)
-            if df_m.empty: return
-            inf_sed = df_m[df_m['Dan'] == 'Sedmica']['Jelo'].values[0] if 'Sedmica' in df_m['Dan'].values else "N/A"
-            inf_rok = df_m[df_m['Dan'] == 'Rok']['Jelo'].values[0] if 'Rok' in df_m['Dan'].values else "N/A"
-            inf_kuvar = df_m[df_m['Dan'] == 'Kuvar']['Jelo'].values[0] if 'Kuvar' in df_m['Dan'].values else "N/A"
+            if "Dan" not in df_m.columns: return
+            inf_sed = df_m[df_m['Dan'] == 'Sedmica']['Jelo'].values[0] if not df_m[df_m['Dan'] == 'Sedmica'].empty else "N/A"
+            inf_rok = df_m[df_m['Dan'] == 'Rok']['Jelo'].values[0] if not df_m[df_m['Dan'] == 'Rok'].empty else "N/A"
+            inf_kuv = df_m[df_m['Dan'] == 'Kuvar']['Jelo'].values[0] if not df_m[df_m['Dan'] == 'Kuvar'].empty else "N/A"
             
             c1, c2, c3 = st.columns(3)
             c1.info(f"📅 **Period:**\n{inf_sed}")
             c2.warning(f"⏰ **Rok:**\n{inf_rok}")
-            c3.success(f"👨‍🍳 **Kuvar:**\n{inf_kuvar}")
+            c3.success(f"👨‍🍳 **Kuvar:**\n{inf_kuv}")
 
             df_sve = ucitaj_sheet("Sheet1")
             with st.form(f"f_{prefix}"):
@@ -137,11 +144,10 @@ else:
                         jela = df_m[df_m['Dan'] == dan]['Jelo'].tolist()
                         for j in jela:
                             prosjek = p_jela.get(j, None)
-                            oznaka = f" (⭐ {prosjek})" if prosjek else " (🆕)"
-                            st.write(f"**{j}{oznaka}**")
+                            st.write(f"**{j}** {f'(⭐ {prosjek})' if prosjek else '(🆕)'}")
                             col1, col2, col3 = st.columns(3)
                             def get_v(d, jl, s):
-                                if not df_sve.empty:
+                                if not df_sve.empty and "Firma" in df_sve.columns:
                                     v = df_sve[(df_sve['Firma']==st.session_state['user']) & (df_sve['Dan']==f"{prefix}-{d}") & (df_sve['Jelo']==jl) & (df_sve['Smjena']==s)]['Kolicina'].tolist()
                                     return int(v[0]) if v else 0
                                 return 0
@@ -151,29 +157,31 @@ else:
                             for k, s in zip([k1, k2, k3], ["I", "II", "III"]):
                                 if k >= 0: unose.append({"Firma": st.session_state['user'], "Dan": f"{prefix}-{dan}", "Jelo": j, "Kolicina": int(k), "Smjena": s})
                 
-                if st.form_submit_button("🚀 SAČUVAJ", use_container_width=True):
-                    mask = ~((df_sve['Firma'] == st.session_state['user']) & (df_sve['Dan'].astype(str).str.startswith(prefix)))
-                    final = pd.concat([df_sve[mask] if not df_sve.empty else df_sve, pd.DataFrame([n for n in unose if n['Kolicina']>0])], ignore_index=True)
+                if st.form_submit_button("🚀 SAČUVAJ NARUDŽBU", use_container_width=True):
+                    df_sve['Dan'] = df_sve['Dan'].astype(str)
+                    mask = ~((df_sve['Firma'] == st.session_state['user']) & (df_sve['Dan'].str.startswith(prefix)))
+                    final = pd.concat([df_sve[mask], pd.DataFrame([n for n in unose if n['Kolicina']>0])], ignore_index=True)
                     conn.update(spreadsheet=spreadsheet_url, worksheet="Sheet1", data=final)
-                    st.success("Narudžba sačuvana!"); st.balloons(); time.sleep(1); st.rerun()
+                    st.success("Spremljeno!"); st.balloons(); time.sleep(1); st.rerun()
 
         with t_t: prikazi_formu("Meni_Trenutni", "Ova", True)
         with t_n: prikazi_formu("Meni_Naredni", "Naredna", False)
-        with t_h: st.dataframe(ucitaj_sheet("Sheet1")[lambda df: df['Firma'] == st.session_state['user']], use_container_width=True, hide_index=True)
+        with t_h:
+            df_hist = ucitaj_sheet("Sheet1")
+            if not df_hist.empty and "Firma" in df_hist.columns:
+                st.dataframe(df_hist[df_hist['Firma'] == st.session_state['user']], use_container_width=True, hide_index=True)
         
         with t_o:
-            st.subheader("⭐ Ocijeni obrok i kuvara")
+            st.subheader("⭐ Ocijeni obrok")
             df_m_t = ucitaj_sheet("Meni_Trenutni")
-            kuvar_trenutni = df_m_t[df_m_t['Dan'] == 'Kuvar']['Jelo'].values[0] if 'Kuvar' in df_m_t['Dan'].values else "Nepoznato"
-            sva_jela = df_m_t[df_m_t['Dan'].isin(dani_std)]['Jelo'].unique().tolist()
-            
-            st.write(f"Ove sedmice kuha za vas: **{kuvar_trenutni}**")
+            kuv_tren = df_m_t[df_m_t['Dan'] == 'Kuvar']['Jelo'].values[0] if not df_m_t[df_m_t['Dan'] == 'Kuvar'].empty else "N/A"
+            sva_j = df_m_t[df_m_t['Dan'].isin(dani_std)]['Jelo'].unique().tolist()
             with st.form("forma_ocjena", clear_on_submit=True):
-                od_jelo = st.selectbox("Jelo:", sva_jela)
+                od_j = st.selectbox("Jelo:", sva_j)
                 ocj = st.select_slider("Ocjena:", options=["Loše", "Može bolje", "Dobro", "Odlično", "Savršeno"], value="Odlično")
                 kom = st.text_area("Komentar:")
-                if st.form_submit_button("📩 Pošalji ocjenu"):
+                if st.form_submit_button("📩 Pošalji"):
                     df_o_p = ucitaj_sheet("Ocjene")
-                    nova_o = pd.DataFrame([{"Firma": st.session_state['user'], "Jelo": od_jelo, "Ocjena": ocj, "Komentar": kom, "Kuvar": kuvar_trenutni}])
+                    nova_o = pd.DataFrame([{"Firma": st.session_state['user'], "Jelo": od_j, "Ocjena": ocj, "Komentar": kom, "Kuvar": kuv_tren}])
                     conn.update(spreadsheet=spreadsheet_url, worksheet="Ocjene", data=pd.concat([df_o_p, nova_o], ignore_index=True))
-                    st.success("Hvala na ocjeni!"); time.sleep(1); st.rerun()
+                    st.success("Hvala!"); time.sleep(1); st.rerun()
