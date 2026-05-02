@@ -59,7 +59,7 @@ else:
         st.title("👨‍🍳 Admin Upravljanje")
         t_a1, t_a2, t_a3, t_a4 = st.tabs(["📊 Kuhinja", "📝 Izmjena Menija", "⭐ Ocjene & Kuvari", "🔄 Reset"])
         
-        # 🔥 KUHINJA (NOVO)
+        # ✅ SIGURNA KUHINJA (NE MOŽE PUĆI)
         with t_a1:
             st.subheader("📺 Kuhinja")
 
@@ -71,40 +71,29 @@ else:
                 df_dan = df_nar[df_nar['Dan'] == f"Ova-{d_sel}"]
 
                 if not df_dan.empty:
-                    grupa = df_dan.groupby(['Jelo', 'Smjena'])['Kolicina'].sum().reset_index()
-                    pivot = grupa.pivot(index="Jelo", columns="Smjena", values="Kolicina").fillna(0)
+                    for jelo in df_dan['Jelo'].unique():
+                        df_j = df_dan[df_dan['Jelo'] == jelo]
 
-                    pivot["UKUPNO"] = pivot.sum(axis=1)
-                    pivot = pivot.sort_values("UKUPNO", ascending=False)
+                        i = df_j[df_j['Smjena'] == "I"]['Kolicina'].sum()
+                        ii = df_j[df_j['Smjena'] == "II"]['Kolicina'].sum()
+                        iii = df_j[df_j['Smjena'] == "III"]['Kolicina'].sum()
 
-                    cols = st.columns(2)
+                        ukupno = i + ii + iii
 
-                    for i, (jelo, row) in enumerate(pivot.iterrows()):
-                        with cols[i % 2]:
-                            ukupno = int(row["UKUPNO"])
-
-                            st.markdown(f"""
-                            <div style="
-                                background:#1e1e1e;
-                                padding:15px;
-                                border-radius:15px;
-                                margin-bottom:10px;
-                            ">
-                                <b>{jelo}</b><br>
-                                I: {int(row.get('I',0))} |
-                                II: {int(row.get('II',0))} |
-                                III: {int(row.get('III',0))}
-                                <br><br>
-                                <b>UKUPNO: {ukupno}</b>
-                            </div>
-                            """, unsafe_allow_html=True)
+                        st.markdown(f"""
+                        <div style="background:#1e1e1e;padding:15px;border-radius:10px;margin-bottom:10px">
+                        <b>{jelo}</b><br>
+                        I: {i} | II: {ii} | III: {iii}<br>
+                        <b>UKUPNO: {ukupno}</b>
+                        </div>
+                        """, unsafe_allow_html=True)
 
                 else:
                     st.info("Nema narudžbi za ovaj dan.")
             else:
                 st.info("Nema podataka.")
 
-        # --- OSTALO OSTALO (NE DIRANO) ---
+        # --- OSTALO NE DIRAM ---
         with t_a2:
             st.subheader("Izmijeni jela, rokove i kuvare")
             odabir_m = st.radio("Koji meni mijenjaš?", ["Meni_Trenutni", "Meni_Naredni"], horizontal=True)
