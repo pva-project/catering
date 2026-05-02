@@ -24,11 +24,15 @@ users = {
 # --- 3. DINAMIČKI MENI ---
 try:
     df_raw = conn.read(spreadsheet=spreadsheet_url, worksheet="Meni", ttl=0)
-    df_raw['Dan'] = df_raw['Dan'].str.strip().replace(['Ponedeljak', 'Ponedjeljak '], 'Ponedjeljak')
-    sedmica_info = df_raw[df_raw['Dan'] == 'Sedmica']['Jelo'].values
-    rok_info = df_raw[df_raw['Dan'] == 'Rok']['Jelo'].values
-    sed_tekst = sedmica_info if len(sedmica_info) > 0 else "Nije uneseno"
-    rok_tekst = rok_info if len(rok_info) > 0 else "Nije uneseno"
+    df_raw['Dan'] = df_raw['Dan'].astype(str).str.strip().replace(['Ponedeljak', 'Ponedjeljak '], 'Ponedjeljak')
+    
+    # Popravljen prikaz teksta za Sedmicu i Rok
+    sedmica_info = df_raw[df_raw['Dan'] == 'Sedmica']['Jelo'].tolist()
+    rok_info = df_raw[df_raw['Dan'] == 'Rok']['Jelo'].tolist()
+    
+    sed_tekst = sedmica_info[0] if sedmica_info else "Nije uneseno"
+    rok_tekst = rok_info[0] if rok_info else "Nije uneseno"
+    
     pravi_dani = ["Ponedjeljak", "Utorak", "Srijeda", "Četvrtak", "Petak", "Subota"]
     df_jela = df_raw[df_raw['Dan'].isin(pravi_dani)]
     meni = {dan: df_jela[df_jela['Dan'] == dan]['Jelo'].tolist() for dan in pravi_dani if not df_jela[df_jela['Dan'] == dan].empty}
@@ -36,12 +40,11 @@ except Exception as e:
     st.error("Greška pri učitavanju menija.")
     st.stop()
 
-# --- 4. LOGIN SISTEM (CENTRALNI PRIKAZ) ---
+# --- 4. LOGIN SISTEM (CENTRALNI) ---
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
 
 if not st.session_state["logged_in"]:
-    # OVO SADA IDE NA SREDINU EKRANA
     st.markdown("<h1 style='text-align: center;'>🔐 Prijava za Catering</h1>", unsafe_allow_html=True)
     with st.container(border=True):
         u = st.text_input("Korisničko ime")
@@ -54,8 +57,8 @@ if not st.session_state["logged_in"]:
             else:
                 st.error("Pogrešni podaci")
 else:
-    # ODJAVA OSTJE U SIDEBAR-U DA NE SMETA MENIJU
-    st.sidebar.write(f"Ulogovani ste kao: **{st.session_state['user']}**")
+    # SideBar za odjavu
+    st.sidebar.write(f"Ulogovani ste: **{st.session_state['user']}**")
     if st.sidebar.button("Odjavi se", use_container_width=True):
         st.session_state["logged_in"] = False
         st.rerun()
@@ -85,7 +88,7 @@ else:
             df_sve, moja_narudzba = pd.DataFrame(), pd.DataFrame()
 
         with t1:
-            with st.form("narudzba_stabilna"):
+            with st.form("narudzba_final"):
                 sve_n = []
                 for dan, jela in meni.items():
                     idx_dan = dani_standard.index(dan)
@@ -100,13 +103,15 @@ else:
                             
                             def get_stara_kol(d, j, s):
                                 if not moja_narudzba.empty:
-                                    val = moja_narudzba[(moja_narudzba['Dan'] == d) & (moja_narudzba['Jelo'] == j) & (moja_narudzba['Smjena'] == s)]['Kolicina'].values
-                                    return int(val[0]) if len(val) > 0 else 0
+                                    # Fix za iloc i filtriranje
+                                    val = moja_narudzba[(moja_narudzba['Dan'] == d) & (moja_narudzba['Jelo'] == j) & (moja_narudzba['Smjena'] == s)]['Kolicina'].tolist()
+                                    return int(val[0]) if val else 0
                                 return 0
 
-                            k1 = c1.number_input(f"I smj", 0, 100, step=1, value=get_stara_kol(dan, jelo, "I"), key=f"{dan}_{jelo}_S1", disabled=onemoguci)
-                            k2 = c2.number_input(f"II smj", 0, 100, step=1, value=get_stara_kol(dan, jelo, "II"), key=f"{dan}_{jelo}_S2", disabled=onemoguci)
-                            k3 = c3.number_input(f"III smj", 0, 100, step=1, value=get_stara_kol(dan, jelo, "III"), key=f"{dan}_{jelo}_S3", disabled=onemoguci)
+                            # Puni nazivi: I Smjena, II Smjena, III Smjena
+                            k1 = c1.number_input(f"I Smjena", 0, 100, step=1, value=get_stara_kol(dan, jelo, "I"), key=f"{dan}_{jelo}_S1", disabled=onemoguci)
+                            k2 = c2.number_input(f"II Smjena", 0, 100, step=1, value=get_stara_kol(dan, jelo, "II"), key=f"{dan}_{jelo}_S2", disabled=onemoguci)
+                            k3 = c3.number_input(f"III Smjena", 0, 100, step=1, value=get_stara_kol(dan, jelo, "III"), key=f"{dan}_{jelo}_S3", disabled=onemoguci)
                             
                             for k, s in zip([k1, k2, k3], ["I", "II", "III"]):
                                 sve_n.append({"Firma": st.session_state['user'], "Dan": dan, "Jelo": jelo, "Kolicina": int(k), "Smjena": s})
@@ -119,7 +124,7 @@ else:
                         novi_podaci = [n for n in sve_n if n['Kolicina'] > 0 and n['Dan'] in dani_za_upis]
                         df_final = pd.concat([df_sve[mask_ostavi], pd.DataFrame(novi_podaci)], ignore_index=True)
                         conn.update(spreadsheet=spreadsheet_url, worksheet="Sheet1", data=df_final)
-                        st.success("✅ Narudžba je sačuvana!")
+                        st.success("✅ Narudžba je uspješno sačuvana!")
                         st.rerun()
                     except Exception as e:
                         st.error(f"Greška: {e}")
