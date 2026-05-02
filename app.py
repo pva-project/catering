@@ -14,13 +14,11 @@ danasnji_dan_index = datetime.now().weekday()
 # --- 2. KORISNICI ---
 users = {"admin": "admin123", "Lattonedil": "lattonedil321", "PVA Group": "pvagroup321", "Esintec": "esintec321", "ActivBH": "activbh321"}
 
-# --- 3. FUNKCIJE ZA ČITANJE/PISANJE ---
+# --- 3. FUNKCIJE ---
 def ucitaj_meni_komplet(sheet_name):
     try:
         df = conn.read(spreadsheet=spreadsheet_url, worksheet=sheet_name, ttl=0)
-        # Čistimo podatke od praznih redova
-        df = df.dropna(how='all')
-        return df
+        return df.dropna(how='all')
     except:
         return pd.DataFrame(columns=["Dan", "Jelo"])
 
@@ -28,7 +26,7 @@ def ucitaj_meni_komplet(sheet_name):
 if "logged_in" not in st.session_state: st.session_state["logged_in"] = False
 
 if not st.session_state["logged_in"]:
-    st.markdown("<h1 style='text-align: center;'>🔐 Prijava</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 style='text-align: center;'>🔐 Prijava za Catering</h1>", unsafe_allow_html=True)
     with st.container(border=True):
         u = st.text_input("Korisničko ime")
         p = st.text_input("Lozinka", type="password")
@@ -38,6 +36,11 @@ if not st.session_state["logged_in"]:
                 st.rerun()
             else: st.error("Pogrešni podaci")
 else:
+    st.sidebar.write(f"Korisnik: **{st.session_state['user']}**")
+    if st.sidebar.button("Odjavi se", use_container_width=True):
+        st.session_state["logged_in"] = False
+        st.rerun()
+
     # --- 5. ADMIN PANEL ---
     if st.session_state["user"] == "admin":
         st.title("👨‍🍳 Admin Upravljanje")
@@ -48,22 +51,15 @@ else:
             odabir_m = st.radio("Koji meni mijenjaš?", ["Meni_Trenutni", "Meni_Naredni"], horizontal=True)
             df_m = ucitaj_meni_komplet(odabir_m)
             
-            # Izvlačenje trenutnog datuma i roka iz tabele
             v_sedmica = df_m[df_m['Dan'] == 'Sedmica']['Jelo'].values[0] if 'Sedmica' in df_m['Dan'].values else ""
             v_rok = df_m[df_m['Dan'] == 'Rok']['Jelo'].values[0] if 'Rok' in df_m['Dan'].values else ""
 
             with st.form(f"form_admin_{odabir_m}"):
-                col_a, col_b = st.columns(2)
-                novo_sedmica = col_a.text_input("📅 Period (npr. 04.05-10.05):", value=v_sedmica)
-                novo_rok = col_b.text_input("⏰ Rok (npr. Nedjelja 20h):", value=v_rok)
+                c_a, c_b = st.columns(2)
+                novo_sedmica = c_a.text_input("📅 Period (npr. 04.05-10.05):", value=v_sedmica)
+                novo_rok = c_b.text_input("⏰ Rok (npr. Nedjelja 20h):", value=v_rok)
                 
-                st.divider()
-                
-                nova_lista = []
-                # Dodajemo info redove prvo
-                nova_lista.append({"Dan": "Sedmica", "Jelo": novo_sedmica})
-                nova_lista.append({"Dan": "Rok", "Jelo": novo_rok})
-
+                nova_lista = [{"Dan": "Sedmica", "Jelo": novo_sedmica}, {"Dan": "Rok", "Jelo": novo_rok}]
                 for dan in dani_std:
                     st.write(f"**{dan}**")
                     postojeca = df_m[df_m['Dan'] == dan]['Jelo'].tolist()
@@ -75,14 +71,13 @@ else:
                 
                 if st.form_submit_button("💾 SAČUVAJ SVE IZMJENE"):
                     conn.update(spreadsheet=spreadsheet_url, worksheet=odabir_m, data=pd.DataFrame(nova_lista))
-                    st.success(f"Uspješno sačuvano u {odabir_m}!")
+                    st.success("Sačuvano!")
                     st.rerun()
 
         with t1:
             df_nar = conn.read(spreadsheet=spreadsheet_url, worksheet="Sheet1", ttl=0)
             if not df_nar.empty:
                 d_sel = st.selectbox("Dan za kuhanje:", dani_std)
-                # Admin vidi narudžbe za TRENUTNU sedmicu (Ova)
                 prikaz = df_nar[df_nar['Dan'] == f"Ova-{d_sel}"].groupby(['Jelo', 'Smjena'])['Kolicina'].sum().reset_index()
                 st.table(prikaz)
             else: st.info("Nema narudžbi.")
@@ -90,32 +85,30 @@ else:
         with t3:
             if st.button("🚀 IZVRŠI ROTACIJU (Naredna -> Trenutna)"):
                 df_next = ucitaj_meni_komplet("Meni_Naredni")
-                if not df_next.empty:
-                    conn.update(spreadsheet=spreadsheet_url, worksheet="Meni_Trenutni", data=df_next)
-                    conn.update(spreadsheet=spreadsheet_url, worksheet="Sheet1", data=pd.DataFrame(columns=["Firma","Dan","Jelo","Kolicina","Smjena"]))
-                    st.success("Naredni meni je postao Trenutni. Narudžbe su resetovane!")
-                    st.rerun()
+                conn.update(spreadsheet=spreadsheet_url, worksheet="Meni_Trenutni", data=df_next)
+                conn.update(spreadsheet=spreadsheet_url, worksheet="Sheet1", data=pd.DataFrame(columns=["Firma","Dan","Jelo","Kolicina","Smjena"]))
+                st.success("Rotirano i resetovano!")
+                st.rerun()
 
     # --- 6. KORISNIČKI PANEL ---
     else:
-        st.sidebar.button("Odjavi se", on_click=lambda: st.session_state.update({"logged_in": False}))
         st.title(f"🍴 {st.session_state['user']}")
         t_t, t_n, t_h = st.tabs(["🍱 Ova Sedmica", "🚀 Naredna Sedmica", "📜 Istorija"])
         
-        df_t = ucitaj_meni_komplet("Meni_Trenutni")
-        df_n = ucitaj_meni_komplet("Meni_Naredni")
-        
-        try:
-            df_sve = conn.read(spreadsheet=spreadsheet_url, worksheet="Sheet1", ttl=0).dropna(how='all')
-            moja_n = df_sve[df_sve['Firma'] == st.session_state['user']]
-        except: df_sve, moja_n = pd.DataFrame(), pd.DataFrame()
-
-        def prikazi_formu(df_meni, prefix, zakljucaj):
-            # Izvlačenje info trake za klijenta
-            info_sed = df_meni[df_meni['Dan'] == 'Sedmica']['Jelo'].values[0] if 'Sedmica' in df_meni['Dan'].values else "N/A"
-            info_rok = df_meni[df_meni['Dan'] == 'Rok']['Jelo'].values[0] if 'Rok' in df_meni['Dan'].values else "N/A"
+        def prikazi_formu(sheet_name, prefix, zakljucaj):
+            df_m = ucitaj_meni_komplet(sheet_name)
+            info_sed = df_m[df_m['Dan'] == 'Sedmica']['Jelo'].values[0] if 'Sedmica' in df_m['Dan'].values else "N/A"
+            info_rok = df_m[df_m['Dan'] == 'Rok']['Jelo'].values[0] if 'Rok' in df_m['Dan'].values else "N/A"
             
-            st.info(f"📅 Period: {info_sed} | ⏰ Rok: {info_rok}")
+            # RAZLIČITE BOJE KAO PRIJE
+            c1, c2 = st.columns(2)
+            c1.info(f"📅 **Period:** {info_sed}")
+            c2.warning(f"⏰ **Rok:** {info_rok}")
+
+            try:
+                df_sve = conn.read(spreadsheet=spreadsheet_url, worksheet="Sheet1", ttl=0).dropna(how='all')
+                moja_n = df_sve[df_sve['Firma'] == st.session_state['user']]
+            except: df_sve, moja_n = pd.DataFrame(), pd.DataFrame()
 
             with st.form(f"f_{prefix}"):
                 unose = []
@@ -127,29 +120,31 @@ else:
 
                     with st.container(border=True):
                         st.markdown(f"#### 📅 {dan}{status}")
-                        jela = df_meni[df_meni['Dan'] == dan]['Jelo'].tolist()
+                        jela = df_m[df_m['Dan'] == dan]['Jelo'].tolist()
                         for j in jela:
                             st.write(f"**{j}**")
-                            c1, c2, c3 = st.columns(3)
+                            col1, col2, col3 = st.columns(3)
                             def get_v(d, jl, s):
                                 if not moja_n.empty:
                                     v = moja_n[(moja_n['Dan']==f"{prefix}-{d}") & (moja_n['Jelo']==jl) & (moja_n['Smjena']==s)]['Kolicina'].tolist()
                                     return int(v[0]) if v else 0
                                 return 0
-                            k1 = c1.number_input("I Smjena", 0, 100, get_v(dan, j, "I"), key=f"{prefix}_{dan}_{j}_1", disabled=onemoguci)
-                            k2 = c2.number_input("II Smjena", 0, 100, get_v(dan, j, "II"), key=f"{prefix}_{dan}_{j}_2", disabled=onemoguci)
-                            k3 = c3.number_input("III Smjena", 0, 100, get_v(dan, j, "III"), key=f"{prefix}_{dan}_{j}_3", disabled=onemoguci)
-                            for k, s in zip([k1, k2, k3], ["I", "II", "III"]):
-                                unose.append({"Firma": st.session_state['user'], "Dan": f"{prefix}-{dan}", "Jelo": j, "Kolicina": int(k), "Smjena": s})
+                            k1 = col1.number_input("I Smjena", 0, 100, get_v(dan, j, "I"), key=f"{prefix}_{dan}_{j}_1", disabled=onemoguci)
+                            k2 = col2.number_input("II Smjena", 0, 100, get_v(dan, j, "II"), key=f"{prefix}_{dan}_{j}_2", disabled=onemoguci)
+                            k3 = col3.number_input("III Smjena", 0, 100, get_v(dan, j, "III"), key=f"{prefix}_{dan}_{j}_3", disabled=onemoguci)
+                            for k, smj in zip([k1, k2, k3], ["I", "II", "III"]):
+                                unose.append({"Firma": st.session_state['user'], "Dan": f"{prefix}-{dan}", "Jelo": j, "Kolicina": int(k), "Smjena": smj})
                 
-                if st.form_submit_button(f"🚀 SAČUVAJ NARUDŽBU"):
-                    pref_dani = [f"{prefix}-{d}" for d in dani_std]
-                    mask = ~((df_sve['Firma'] == st.session_state['user']) & (df_sve['Dan'].isin(pref_dani)))
+                if st.form_submit_button("🚀 SAČUVAJ NARUDŽBU", use_container_width=True):
+                    mask = ~((df_sve['Firma'] == st.session_state['user']) & (df_sve['Dan'].str.startswith(prefix)))
                     final = pd.concat([df_sve[mask] if not df_sve.empty else df_sve, pd.DataFrame([n for n in unose if n['Kolicina']>0])], ignore_index=True)
                     conn.update(spreadsheet=spreadsheet_url, worksheet="Sheet1", data=final)
-                    st.success("Sačuvano!")
+                    st.success("Uspješno sačuvano!")
                     st.rerun()
 
-        with t_t: prikazi_formu(df_t, "Ova", True)
-        with t_n: prikazi_formu(df_n, "Naredna", False)
-        with t_h: st.dataframe(moja_n, use_container_width=True, hide_index=True)
+        with t_t: prikazi_formu("Meni_Trenutni", "Ova", True)
+        with t_n: prikazi_formu("Meni_Naredni", "Naredna", False)
+        with t_h: 
+            try:
+                st.dataframe(conn.read(spreadsheet=spreadsheet_url, worksheet="Sheet1", ttl=0)[lambda df: df['Firma'] == st.session_state['user']], use_container_width=True, hide_index=True)
+            except: st.info("Nema narudžbi.")
