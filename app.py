@@ -25,35 +25,41 @@ users = {
 try:
     df_raw = conn.read(spreadsheet=spreadsheet_url, worksheet="Meni", ttl=0)
     df_raw['Dan'] = df_raw['Dan'].str.strip().replace(['Ponedeljak', 'Ponedjeljak '], 'Ponedjeljak')
-    
     sedmica_info = df_raw[df_raw['Dan'] == 'Sedmica']['Jelo'].values
     rok_info = df_raw[df_raw['Dan'] == 'Rok']['Jelo'].values
-    sed_tekst = sedmica_info[0] if len(sedmica_info) > 0 else "Nije uneseno"
-    rok_tekst = rok_info[0] if len(rok_info) > 0 else "Nije uneseno"
-
+    sed_tekst = sedmica_info if len(sedmica_info) > 0 else "Nije uneseno"
+    rok_tekst = rok_info if len(rok_info) > 0 else "Nije uneseno"
     pravi_dani = ["Ponedjeljak", "Utorak", "Srijeda", "Četvrtak", "Petak", "Subota"]
     df_jela = df_raw[df_raw['Dan'].isin(pravi_dani)]
     meni = {dan: df_jela[df_jela['Dan'] == dan]['Jelo'].tolist() for dan in pravi_dani if not df_jela[df_jela['Dan'] == dan].empty}
 except Exception as e:
-    st.error(f"Greška pri učitavanju menija: {e}")
+    st.error("Greška pri učitavanju menija.")
     st.stop()
 
-# --- 4. LOGIN ---
+# --- 4. LOGIN SISTEM (CENTRALNI PRIKAZ) ---
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
 
 if not st.session_state["logged_in"]:
-    st.sidebar.header("🔐 Prijava")
-    u = st.sidebar.text_input("Korisničko ime")
-    p = st.sidebar.text_input("Lozinka", type="password")
-    if st.sidebar.button("Prijavi se", use_container_width=True):
-        if u in users and users[u] == p:
-            st.session_state["logged_in"] = True
-            st.session_state["user"] = u
-            st.rerun()
-        else:
-            st.sidebar.error("Pogrešni podaci")
+    # OVO SADA IDE NA SREDINU EKRANA
+    st.markdown("<h1 style='text-align: center;'>🔐 Prijava za Catering</h1>", unsafe_allow_html=True)
+    with st.container(border=True):
+        u = st.text_input("Korisničko ime")
+        p = st.text_input("Lozinka", type="password")
+        if st.button("Prijavi se", use_container_width=True):
+            if u in users and users[u] == p:
+                st.session_state["logged_in"] = True
+                st.session_state["user"] = u
+                st.rerun()
+            else:
+                st.error("Pogrešni podaci")
 else:
+    # ODJAVA OSTJE U SIDEBAR-U DA NE SMETA MENIJU
+    st.sidebar.write(f"Ulogovani ste kao: **{st.session_state['user']}**")
+    if st.sidebar.button("Odjavi se", use_container_width=True):
+        st.session_state["logged_in"] = False
+        st.rerun()
+
     # --- 5. ADMIN PANEL ---
     if st.session_state["user"] == "admin":
         st.title("👨‍🍳 Admin Panel")
@@ -82,19 +88,12 @@ else:
             with st.form("narudzba_stabilna"):
                 sve_n = []
                 for dan, jela in meni.items():
-                    onemoguci = False
-                    status = ""
                     idx_dan = dani_standard.index(dan)
-                    
-                    if danasnji_dan_index <= 5: 
-                        if danasnji_dan_index >= idx_dan:
-                            onemoguci, status = True, " 🔒 (Zatvoreno)"
-                    else:
-                        onemoguci, status = False, " 🔓 (Nova sedmica)"
+                    onemoguci = (danasnji_dan_index <= 5 and danasnji_dan_index >= idx_dan)
+                    status = " 🔒 (Zatvoreno)" if onemoguci else " 🔓 (Otvoreno)"
 
                     with st.container(border=True):
                         st.markdown(f"#### 📅 {dan}{status}")
-                        
                         for jelo in jela:
                             st.markdown(f"**{jelo}**")
                             c1, c2, c3 = st.columns(3)
@@ -105,9 +104,9 @@ else:
                                     return int(val[0]) if len(val) > 0 else 0
                                 return 0
 
-                            k1 = c1.number_input(f"I smjena", 0, 100, step=1, value=get_stara_kol(dan, jelo, "I"), key=f"{dan}_{jelo}_S1", disabled=onemoguci)
-                            k2 = c2.number_input(f"II smjena", 0, 100, step=1, value=get_stara_kol(dan, jelo, "II"), key=f"{dan}_{jelo}_S2", disabled=onemoguci)
-                            k3 = c3.number_input(f"III smjena", 0, 100, step=1, value=get_stara_kol(dan, jelo, "III"), key=f"{dan}_{jelo}_S3", disabled=onemoguci)
+                            k1 = c1.number_input(f"I smj", 0, 100, step=1, value=get_stara_kol(dan, jelo, "I"), key=f"{dan}_{jelo}_S1", disabled=onemoguci)
+                            k2 = c2.number_input(f"II smj", 0, 100, step=1, value=get_stara_kol(dan, jelo, "II"), key=f"{dan}_{jelo}_S2", disabled=onemoguci)
+                            k3 = c3.number_input(f"III smj", 0, 100, step=1, value=get_stara_kol(dan, jelo, "III"), key=f"{dan}_{jelo}_S3", disabled=onemoguci)
                             
                             for k, s in zip([k1, k2, k3], ["I", "II", "III"]):
                                 sve_n.append({"Firma": st.session_state['user'], "Dan": dan, "Jelo": jelo, "Kolicina": int(k), "Smjena": s})
@@ -115,16 +114,10 @@ else:
                 
                 if st.form_submit_button("🚀 SAČUVAJ NARUDŽBU", use_container_width=True):
                     try:
-                        if danasnji_dan_index <= 5:
-                            dani_za_upis = [d for d in meni.keys() if dani_standard.index(d) > danasnji_dan_index]
-                        else:
-                            dani_za_upis = list(meni.keys())
-                        
+                        dani_za_upis = [d for d in meni.keys() if dani_standard.index(d) > danasnji_dan_index] if danasnji_dan_index <= 5 else list(meni.keys())
                         mask_ostavi = ~((df_sve['Firma'] == st.session_state['user']) & (df_sve['Dan'].isin(dani_za_upis)))
-                        df_zadrzano = df_sve[mask_ostavi]
                         novi_podaci = [n for n in sve_n if n['Kolicina'] > 0 and n['Dan'] in dani_za_upis]
-                        df_final = pd.concat([df_zadrzano, pd.DataFrame(novi_podaci)], ignore_index=True)
-                        
+                        df_final = pd.concat([df_sve[mask_ostavi], pd.DataFrame(novi_podaci)], ignore_index=True)
                         conn.update(spreadsheet=spreadsheet_url, worksheet="Sheet1", data=df_final)
                         st.success("✅ Narudžba je sačuvana!")
                         st.rerun()
@@ -133,7 +126,3 @@ else:
 
         with t2:
             st.dataframe(moja_narudzba, use_container_width=True, hide_index=True)
-
-    if st.sidebar.button("Odjavi se", use_container_width=True):
-        st.session_state["logged_in"] = False
-        st.rerun()
