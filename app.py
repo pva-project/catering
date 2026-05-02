@@ -6,6 +6,23 @@ import time
 
 # --- 1. KONFIGURACIJA ---
 st.set_page_config(page_title="Catering Management", layout="centered")
+
+# 🔥 SAKRIJ STREAMLIT UI (gore + dole)
+st.markdown("""
+<style>
+#MainMenu {visibility: hidden;}
+header {visibility: hidden;}
+footer {visibility: hidden;}
+
+[data-testid="stToolbar"] {display: none !important;}
+.stFloatingActionButton {display: none !important;}
+
+button[kind="secondary"] {display: none !important;}
+button[title="View fullscreen"] {display: none !important;}
+button[title="Open in new tab"] {display: none !important;}
+</style>
+""", unsafe_allow_html=True)
+
 spreadsheet_url = st.secrets["connections"]["gsheets"]["spreadsheet"]
 conn = st.connection("gsheets", type=GSheetsConnection)
 
@@ -14,7 +31,13 @@ danasnji_dan_index = datetime.now().weekday()
 mapa_ocjena = {"Loše": 1, "Može bolje": 2, "Dobro": 3, "Odlično": 4, "Savršeno": 5}
 
 # --- 2. KORISNICI ---
-users = {"admin": "admin123", "Lattonedil": "lattonedil321", "PVA Group": "pvagroup321", "Esintec": "esintec321", "ActivBH": "activbh321"}
+users = {
+    "admin": "admin123",
+    "Lattonedil": "lattonedil321",
+    "PVA Group": "pvagroup321",
+    "Esintec": "esintec321",
+    "ActivBH": "activbh321"
+}
 
 # --- 3. FUNKCIJE ---
 def ucitaj_sheet(sheet_name):
@@ -29,14 +52,16 @@ def ucitaj_sheet(sheet_name):
 
 def izracunaj_prosjeke():
     df_o = ucitaj_sheet("Ocjene")
-    if df_o.empty or "Ocjena" not in df_o.columns: return {}, {}
+    if df_o.empty or "Ocjena" not in df_o.columns: 
+        return {}, {}
     df_o['Numericka'] = df_o['Ocjena'].map(mapa_ocjena)
     p_jela = df_o.groupby('Jelo')['Numericka'].mean().round(1).to_dict()
     p_kuvari = df_o.groupby('Kuvar')['Numericka'].mean().round(1).to_dict() if "Kuvar" in df_o.columns else {}
     return p_jela, p_kuvari
 
 # --- 4. LOGIN ---
-if "logged_in" not in st.session_state: st.session_state["logged_in"] = False
+if "logged_in" not in st.session_state: 
+    st.session_state["logged_in"] = False
 
 if not st.session_state["logged_in"]:
     st.markdown("<h1 style='text-align: center;'>🔐 Prijava za Catering</h1>", unsafe_allow_html=True)
@@ -45,9 +70,12 @@ if not st.session_state["logged_in"]:
         p = st.text_input("Lozinka", type="password")
         if st.button("Prijavi se", use_container_width=True):
             if u in users and users[u] == p:
-                st.session_state["logged_in"], st.session_state["user"] = True, u
+                st.session_state["logged_in"] = True
+                st.session_state["user"] = u
                 st.rerun()
-            else: st.error("Pogrešni podaci")
+            else:
+                st.error("Pogrešni podaci")
+
 else:
     st.sidebar.write(f"Korisnik: **{st.session_state['user']}**")
     if st.sidebar.button("Odjavi se", use_container_width=True):
@@ -59,7 +87,7 @@ else:
         st.title("👨‍🍳 Admin Upravljanje")
         t_a1, t_a2, t_a3, t_a4 = st.tabs(["📊 Kuhinja", "📝 Izmjena Menija", "⭐ Ocjene & Kuvari", "🔄 Reset"])
         
-        # ✅ SIGURNA KUHINJA (NE MOŽE PUĆI)
+        # ✅ KUHINJA (SIGURNA VERZIJA)
         with t_a1:
             st.subheader("📺 Kuhinja")
 
@@ -93,7 +121,7 @@ else:
             else:
                 st.info("Nema podataka.")
 
-        # --- OSTALO NE DIRAM ---
+        # --- OSTALO OSTAVLJENO ISTO ---
         with t_a2:
             st.subheader("Izmijeni jela, rokove i kuvare")
             odabir_m = st.radio("Koji meni mijenjaš?", ["Meni_Trenutni", "Meni_Naredni"], horizontal=True)
@@ -117,8 +145,11 @@ else:
                     j2 = st.text_input(f"Jelo 2", value=postojeca[1] if len(postojeca) > 1 else "", key=f"{dan}_2")
                     j3 = st.text_input(f"Jelo 3", value=postojeca[2] if len(postojeca) > 2 else "", key=f"{dan}_3")
                     for j in [j1, j2, j3]:
-                        if j.strip(): nova_lista.append({"Dan": dan, "Jelo": j.strip()})
+                        if j.strip(): 
+                            nova_lista.append({"Dan": dan, "Jelo": j.strip()})
                 
                 if st.form_submit_button("💾 SAČUVAJ SVE"):
                     conn.update(spreadsheet=spreadsheet_url, worksheet=odabir_m, data=pd.DataFrame(nova_lista))
-                    st.success("Sačuvano!"); time.sleep(1); st.rerun()
+                    st.success("Sačuvano!")
+                    time.sleep(1)
+                    st.rerun()
