@@ -12,7 +12,7 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 dani_std = ["Ponedjeljak", "Utorak", "Srijeda", "Četvrtak", "Petak", "Subota"]
 danasnji_dan_index = datetime.now().weekday()
 
-# Mapa za pretvaranje teksta u brojeve radi prosjeka
+# Mapa za prosjek
 mapa_ocjena = {"Loše": 1, "Može bolje": 2, "Dobro": 3, "Odlično": 4, "Savršeno": 5}
 
 # --- 2. KORISNICI ---
@@ -30,11 +30,8 @@ def izracunaj_prosjeke():
     df_o = ucitaj_sheet("Ocjene")
     if df_o.empty:
         return {}
-    # Pretvaranje teksta u brojeve
     df_o['Numericka'] = df_o['Ocjena'].map(mapa_ocjena)
-    # Grupisanje po jelu i računanje prosjeka
-    prosjeci = df_o.groupby('Jelo')['Numericka'].mean().round(1).to_dict()
-    return prosjeci
+    return df_o.groupby('Jelo')['Numericka'].mean().round(1).to_dict()
 
 # --- 4. LOGIN ---
 if "logged_in" not in st.session_state: st.session_state["logged_in"] = False
@@ -64,10 +61,12 @@ else:
             df_nar = ucitaj_sheet("Sheet1")
             if not df_nar.empty:
                 d_sel = st.selectbox("Dan za kuhanje:", dani_std)
-                st.table(df_nar[df_nar['Dan'] == f"Ova-{d_sel}"].groupby(['Jelo', 'Smjena'])['Kolicina'].sum().reset_index())
+                # Popravljen filter za admina da vidi TRENUTNU sedmicu
+                prikaz = df_nar[df_nar['Dan'] == f"Ova-{d_sel}"].groupby(['Jelo', 'Smjena'])['Kolicina'].sum().reset_index()
+                st.table(prikaz)
         
         with t_a3:
-            st.subheader("⭐ Detaljan pregled svih ocjena")
+            st.subheader("⭐ Sve ocjene i komentari")
             df_ocjene_all = ucitaj_sheet("Ocjene")
             if not df_ocjene_all.empty:
                 st.dataframe(df_ocjene_all, use_container_width=True, hide_index=True)
@@ -78,15 +77,13 @@ else:
                 df_next = ucitaj_sheet("Meni_Naredni")
                 conn.update(spreadsheet=spreadsheet_url, worksheet="Meni_Trenutni", data=df_next)
                 conn.update(spreadsheet=spreadsheet_url, worksheet="Sheet1", data=pd.DataFrame(columns=["Firma","Dan","Jelo","Kolicina","Smjena"]))
-                st.success("Sistem rotiran!")
-                time.sleep(1); st.rerun()
+                st.success("Sistem rotiran!"); time.sleep(1); st.rerun()
 
     # --- 6. KORISNIČKI PANEL ---
     else:
         st.title(f"🍴 {st.session_state['user']}")
         t_t, t_n, t_h, t_o = st.tabs(["🍱 Ova Sedmica", "🚀 Naredna Sedmica", "📜 Istorija", "⭐ Ocijeni obrok"])
         
-        # Učitaj prosječne ocjene za prikaz klijentima
         prosjeci_ocjena = izracunaj_prosjeke()
 
         def prikazi_formu(sheet_name, prefix, zakljucaj):
@@ -94,9 +91,15 @@ else:
             if df_m.empty: return
             inf_sed = df_m[df_m['Dan'] == 'Sedmica']['Jelo'].values if 'Sedmica' in df_m['Dan'].values else "N/A"
             inf_rok = df_m[df_m['Dan'] == 'Rok']['Jelo'].values if 'Rok' in df_m['Dan'].values else "N/A"
-            c1, c2 = st.columns(2); c1.info(f"📅 {inf_sed}"); c2.warning(f"⏰ {inf_rok}")
             
-            df_sve = ucitaj_sheet("Sheet1")
+            c1, c2 = st.columns(2)
+            c1.info(f"📅 **Period:** {inf_sed}")
+            c2.warning(f"⏰ **Rok:** {inf_rok}")
+
+            try:
+                df_sve = ucitaj_sheet("Sheet1")
+            except: df_sve = pd.DataFrame(columns=["Firma", "Dan", "Jelo", "Kolicina", "Smjena"])
+
             with st.form(f"f_{prefix}"):
                 unose = []
                 for dan in dani_std:
@@ -108,11 +111,10 @@ else:
                         st.markdown(f"#### 📅 {dan}{status}")
                         jela = df_m[df_m['Dan'] == dan]['Jelo'].tolist()
                         for j in jela:
-                            # PRIKAZ OCJENE PORED JELA
-                            prosjek = prosjeci_ocjena.get(j, "Nema ocjena")
-                            zvezdice = f"⭐ {prosjek}" if prosjek != "Nema ocjena" else "🆕 (Novo jelo)"
-                            
-                            st.write(f"**{j}**  \n  <small style='color: gray;'>{zvezdice}</small>", unsafe_allow_html=True)
+                            # OCJENA U PRODUŽETKU NAZIVA JELA
+                            prosjek = prosjeci_ocjena.get(j, None)
+                            oznaka_ocjene = f" (⭐ {prosjek})" if prosjek else " (🆕)"
+                            st.write(f"**{j}{oznaka_ocjene}**")
                             
                             col1, col2, col3 = st.columns(3)
                             def get_v(d, jl, s):
@@ -127,17 +129,17 @@ else:
                                 if k >= 0: unose.append({"Firma": st.session_state['user'], "Dan": f"{prefix}-{dan}", "Jelo": j, "Kolicina": int(k), "Smjena": s})
                 
                 if st.form_submit_button("🚀 SAČUVAJ NARUDŽBU", use_container_width=True):
-                    df_sve_cl = df_sve if not df_sve.empty else pd.DataFrame(columns=["Firma", "Dan", "Jelo", "Kolicina", "Smjena"])
-                    mask = ~((df_sve_cl['Firma'] == st.session_state['user']) & (df_sve_cl['Dan'].astype(str).str.startswith(prefix)))
-                    final = pd.concat([df_sve_cl[mask], pd.DataFrame([n for n in unose if n['Kolicina']>0])], ignore_index=True)
+                    df_sve['Dan'] = df_sve['Dan'].astype(str)
+                    mask = ~((df_sve['Firma'] == st.session_state['user']) & (df_sve['Dan'].str.startswith(prefix)))
+                    final = pd.concat([df_sve[mask] if not df_sve.empty else df_sve, pd.DataFrame([n for n in unose if n['Kolicina']>0])], ignore_index=True)
                     conn.update(spreadsheet=spreadsheet_url, worksheet="Sheet1", data=final)
-                    st.success("✅ Sačuvano!"); st.balloons(); time.sleep(1); st.rerun()
+                    st.success("✅ Narudžba sačuvana!"); st.balloons(); time.sleep(1); st.rerun()
 
         with t_t: prikazi_formu("Meni_Trenutni", "Ova", True)
         with t_n: prikazi_formu("Meni_Naredni", "Naredna", False)
         with t_h:
-            df_h = ucitaj_sheet("Sheet1")
-            if not df_h.empty: st.dataframe(df_h[df_h['Firma'] == st.session_state['user']], use_container_width=True, hide_index=True)
+            df_curr = ucitaj_sheet("Sheet1")
+            if not df_curr.empty: st.dataframe(df_curr[df_curr['Firma'] == st.session_state['user']], use_container_width=True, hide_index=True)
         
         with t_o:
             st.subheader("⭐ Ocijenite kvalitet obroka")
@@ -152,5 +154,3 @@ else:
                     nova_o = pd.DataFrame([{"Firma": st.session_state['user'], "Jelo": od_jelo, "Ocjena": ocj, "Komentar": kom}])
                     conn.update(spreadsheet=spreadsheet_url, worksheet="Ocjene", data=pd.concat([df_o_p, nova_o], ignore_index=True))
                     st.success("Hvala na ocjeni!"); time.sleep(1); st.rerun()
-
-
