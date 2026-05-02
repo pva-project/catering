@@ -7,19 +7,10 @@ import time
 # --- 1. KONFIGURACIJA ---
 st.set_page_config(page_title="Catering Management", layout="centered")
 
-# 🔥 SAKRIJ STREAMLIT UI (gore + dole)
+# ✅ MINIMALNI CSS (NE LOMI LOGIN)
 st.markdown("""
 <style>
-#MainMenu {visibility: hidden;}
-header {visibility: hidden;}
 footer {visibility: hidden;}
-
-[data-testid="stToolbar"] {display: none !important;}
-.stFloatingActionButton {display: none !important;}
-
-button[kind="secondary"] {display: none !important;}
-button[title="View fullscreen"] {display: none !important;}
-button[title="Open in new tab"] {display: none !important;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -60,7 +51,7 @@ def izracunaj_prosjeke():
     return p_jela, p_kuvari
 
 # --- 4. LOGIN ---
-if "logged_in" not in st.session_state: 
+if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
 
 if not st.session_state["logged_in"]:
@@ -87,7 +78,7 @@ else:
         st.title("👨‍🍳 Admin Upravljanje")
         t_a1, t_a2, t_a3, t_a4 = st.tabs(["📊 Kuhinja", "📝 Izmjena Menija", "⭐ Ocjene & Kuvari", "🔄 Reset"])
         
-        # ✅ KUHINJA (SIGURNA VERZIJA)
+        # ✅ KUHINJA (SIGURNA)
         with t_a1:
             st.subheader("📺 Kuhinja")
 
