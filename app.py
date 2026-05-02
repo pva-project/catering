@@ -7,30 +7,33 @@ import time
 # --- 1. KONFIGURACIJA I NASILNO SKRIVANJE UI ELEMENATA ---
 st.set_page_config(page_title="Catering Management", layout="centered")
 
-# TOTALNO SKRIVANJE - NAJJAČA VERZIJA
-hide_st_style = """
-            <style>
-            /* 1. Sakrij cijeli header (gdje je Fork, GitHub, Menu) */
-            header {visibility: hidden !important; height: 0px !important;}
-            [data-testid="stHeader"] {display: none !important;}
-            
-            /* 2. Sakrij footer (Made with Streamlit) */
-            footer {visibility: hidden !important;}
-            
-            /* 3. Sakrij krunicu (Deploy dugme) i sve plutajuće dugmiće desno */
-            .stAppDeployButton {display: none !important; visibility: hidden !important;}
-            button[title="View source on GitHub"] {display: none !important;}
-            
-            /* 4. Opšte čišćenje za mobilne uređaje */
-            #MainMenu {visibility: hidden !important;}
-            .st-emotion-cache-zq59db {display: none !important;}
-            .st-emotion-cache-15ec669 {display: none !important;}
-            
-            /* 5. Sakrij statusni widget (ako se pojavi u uglu) */
-            [data-testid="stStatusWidget"] {display: none !important;}
-            </style>
-            """
-st.markdown(hide_st_style, unsafe_allow_html=True)
+# NAJJAČI CSS DO SADA - POKRIVA SVE VERZIJE STREAMLITA
+ultimate_hide_style = """
+    <style>
+    /* Sakrij gornju traku (Header) */
+    [data-testid="stHeader"] {display: none !important;}
+    header {visibility: hidden !important; height: 0px !important;}
+    
+    /* Sakrij krunicu, GitHub, Fork i sve gumbe u desnom uglu */
+    .stAppDeployButton {display: none !important;}
+    button[title="View source on GitHub"] {display: none !important;}
+    #MainMenu {visibility: hidden !important;}
+    .st-emotion-cache-zq59db {display: none !important;}
+    .st-emotion-cache-15ec669 {display: none !important;}
+    .st-emotion-cache-12m0610 {display: none !important;}
+    
+    /* Sakrij footer (Made with Streamlit) */
+    footer {display: none !important; visibility: hidden !important;}
+    
+    /* Ukloni sav prazan prostor na vrhu */
+    .block-container {padding-top: 0rem !important; padding-bottom: 0rem !important;}
+    
+    /* Sakrij statusne widgete i toolbar-ove */
+    [data-testid="stStatusWidget"] {display: none !important;}
+    div[data-testid="stToolbar"] {display: none !important;}
+    </style>
+"""
+st.markdown(ultimate_hide_style, unsafe_allow_html=True)
 
 spreadsheet_url = st.secrets["connections"]["gsheets"]["spreadsheet"]
 conn = st.connection("gsheets", type=GSheetsConnection)
