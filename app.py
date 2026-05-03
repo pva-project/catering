@@ -1,79 +1,66 @@
 import streamlit as st
 import pandas as pd
 from streamlit_gsheets import GSheetsConnection
-from datetime import datetime
-import time
 
-# --- 1. KONFIGURACIJA ---
-st.set_page_config(page_title="Catering Management", layout="centered")
+# 1. FUNKCIJA ZA ZVJEZDICE (Bez HTML-a, direktan prikaz)
+def prikazi_zvijezde(ocjena):
+    if pd.isna(ocjena) or ocjena == 0:
+        return "☆☆☆☆☆ (0.0)"
+    pune = int(round(ocjena))
+    return "⭐" * pune + "☆" * (5 - pune) + f" ({ocjena})"
+
+# 2. KONFIGURACIJA POVEZIVANJA
 spreadsheet_url = st.secrets["connections"]["gsheets"]["spreadsheet"]
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-dani_std = ["Ponedjeljak", "Utorak", "Srijeda", "Četvrtak", "Petak", "Subota"]
-mapa_ocjena = {"Loše": 1, "Može bolje": 2, "Dobro": 3, "Odlično": 4, "Savršeno": 5}
+def ucitaj_podatke(sheet):
+    return conn.read(spreadsheet=spreadsheet_url, worksheet=sheet, ttl=0).dropna(how='all')
 
-# --- 2. KORISNICI ---
-users = {"admin": "admin123", "Lattonedil": "lattonedil321", "PVA Group": "pvagroup321", "Esintec": "esintec321", "ActivBH": "activbh321"}
+# 3. ANALIZA OCJENA (Povezivanje imena iz baze)
+def izracunaj_statistiku():
+    df_o = ucitaj_podatke("Ocjene")
+    mapa = {"Loše": 1, "Može bolje": 2, "Dobro": 3, "Odlično": 4, "Savršeno": 5}
+    
+    if not df_o.empty and "Ocjena" in df_o.columns:
+        df_o['Br'] = df_o['Ocjena'].map(mapa)
+        # Prosjek po imenu kuvara (Jelena, Dragana...)
+        prosjeci_kuvara = df_o.groupby('Kuvar')['Br'].mean().round(1).to_dict()
+        prosjeci_jela = df_o.groupby('Jelo')['Br'].mean().round(1).to_dict()
+        return prosjeci_kuvara, prosjeci_jela
+    return {}, {}
 
-# --- 3. FUNKCIJE ---
-def ucitaj_sheet(sheet_name):
-    try:
-        df = conn.read(spreadsheet=spreadsheet_url, worksheet=sheet_name, ttl=0)
-        return df.dropna(how='all')
-    except: return pd.DataFrame(columns=["Dan", "Jelo"])
+# --- ADMIN PANEL ---
+st.title("👨‍🍳 Admin Upravljanje")
 
-def izracunaj_prosjeke():
-    df_o = ucitaj_sheet("Ocjene")
-    if df_o.empty or "Ocjena" not in df_o.columns: return {}, {}
-    df_o['Numericka'] = df_o['Ocjena'].map(mapa_ocjena)
-    p_jela = df_o.groupby('Jelo')['Numericka'].mean().round(1).to_dict()
-    # Računanje prosjeka po imenu iz kolone 'Kuvar' (Jelena, Dragana...)
-    p_kuvari = df_o.groupby('Kuvar')['Numericka'].mean().round(1).to_dict() if "Kuvar" in df_o.columns else {}
-    return p_jela, p_kuvari
+# Dohvatanje trenutnih imena kuvara iz Menija
+df_meni = ucitaj_podatke("Meni_Trenutni")
+k1_ime = df_meni[df_meni['Dan'].str.contains("Kuvar 1", na=False)]['Jelo'].values[0] if not df_meni.empty else "N/A"
+k2_ime = df_meni[df_meni['Dan'].str.contains("Kuvar 2", na=False)]['Jelo'].values[0] if not df_meni.empty else "N/A"
 
-# --- 4. LOGIN SISTEM ---
-if "logged_in" not in st.session_state: st.session_state["logged_in"] = False
+p_kuvari, p_jela = izracunaj_statistiku()
 
-if not st.session_state["logged_in"]:
-    st.markdown("<h1 style='text-align: center;'>🔐 Prijava za Catering</h1>", unsafe_allow_html=True)
-    with st.container(border=True):
-        u = st.text_input("Korisničko ime")
-        p = st.text_input("Lozinka", type="password")
-        if st.button("Prijavi se", use_container_width=True):
-            if u in users and users[u] == p:
-                st.session_state["logged_in"], st.session_state["user"] = True, u
-                st.rerun()
-            else: st.error("Pogrešni podaci")
-else:
-    # --- 5. ADMIN PANEL ---
-    if st.session_state["user"] == "admin":
-        st.title("👨‍🍳 Admin Upravljanje")
-        df_m_t = ucitaj_sheet("Meni_Trenutni")
-        p_jela, p_kuvari = izracunaj_prosjeke()
+t1, t2, t3 = st.tabs(["📊 Kuhinja", "📝 Meni", "⭐ Ocjene"])
 
-        # POVLAČENJE IMENA (Jelena/Dragana)
-        k1_ime = df_m_t[df_m_t['Dan'].str.contains('Kuvar 1', na=False)]['Jelo'].values[0] if not df_m_t[df_m_t['Dan'].str.contains('Kuvar 1', na=False)].empty else "N/A"
-        k2_ime = df_m_t[df_m_t['Dan'].str.contains('Kuvar 2', na=False)]['Jelo'].values[0] if not df_m_t[df_m_t['Dan'].str.contains('Kuvar 2', na=False)].empty else "N/A"
+with t1:
+    # Ispravljen prikaz: Ime kuvara + zvjezdice bez HTML koda
+    st.info(f"👨‍🍳 Glavni kuvari: {k1_ime} ({prikazi_zvijezde(p_kuvari.get(k1_ime, 0.0))}) & {k2_ime} ({prikazi_zvijezde(p_kuvari.get(k2_ime, 0.0))})")
+    
+    # Tabela narudžbi
+    df_narudzbe = ucitaj_podatke("Sheet1")
+    if not df_narudzbe.empty:
+        dan = st.selectbox("Izaberi dan:", ["Ponedjeljak", "Utorak", "Srijeda", "Četvrtak", "Petak"])
+        prikaz = df_narudzbe[df_narudzbe['Dan'] == f"Ova-{dan}"].groupby(['Jelo', 'Smjena'])['Kolicina'].sum().reset_index()
+        st.table(prikaz)
 
-        t_a1, t_a2, t_a3, t_a4 = st.tabs(["📊 Kuhinja", "📝 Izmjena Menija", "⭐ Ocjene", "🔄 Reset"])
-
-        with t_a1: # TAB KUHINJA
-            st.info(f"👨‍🍳 Glavni kuvari: {k1_ime} ({p_kuvari.get(k1_ime, 0.0)} ⭐) & {k2_ime} ({p_kuvari.get(k2_ime, 0.0)} ⭐)")
-            
-            df_nar = ucitaj_sheet("Sheet1")
-            if not df_nar.empty:
-                d_sel = st.selectbox("Izaberi dan:", dani_std)
-                prikaz = df_nar[df_nar['Dan'] == f"Ova-{d_sel}"].groupby(['Jelo', 'Smjena'])['Kolicina'].sum().reset_index()
-                st.table(prikaz)
-
-        with t_a3: # TAB OCJENE
-            st.subheader("⭐ Rang lista")
-            st.write(f"**{k1_ime}**: {p_kuvari.get(k1_ime, 0.0)} ⭐")
-            st.write(f"**{k2_ime}**: {p_kuvari.get(k2_ime, 0.0)} ⭐")
-            st.divider()
-            st.dataframe(ucitaj_sheet("Ocjene"), use_container_width=True, hide_index=True)
-
-        with t_a4:
-            if st.button("Odjavi se"):
-                st.session_state["logged_in"] = False
-                st.rerun()
+with t3:
+    st.subheader("⭐ Rang lista kuvara")
+    # Prikaz rejtinga za konkretna imena
+    c1, c2 = st.columns(2)
+    with c1:
+        st.metric(f"Kuvar: {k1_ime}", f"{p_kuvari.get(k1_ime, 0.0)} ⭐")
+    with c2:
+        st.metric(f"Kuvar: {k2_ime}", f"{p_kuvari.get(k2_ime, 0.0)} ⭐")
+    
+    st.divider()
+    st.write("Svi komentari:")
+    st.dataframe(ucitaj_podatke("Ocjene"), hide_index=True)
