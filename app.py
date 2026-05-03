@@ -4,38 +4,29 @@ from streamlit_gsheets import GSheetsConnection
 from datetime import datetime
 import time
 
-# --- 1. TOTALNO SKRIVANJE SVIH IKONA I CLEAN DIZAJN ---
+# --- 1. KONFIGURACIJA I SKRIVANJE IKONA ---
 st.set_page_config(page_title="Catering Management", layout="centered")
 
-ultimate_hide_style = """
+st.markdown("""
     <style>
-    [data-testid="stHeader"] {display: none !important;}
-    header {visibility: hidden !important; height: 0px !important;}
-    footer {display: none !important; visibility: hidden !important;}
-    [data-testid="stFooter"] {display: none !important;}
-    .stAppDeployButton {display: none !important;}
-    [data-testid="stStatusWidget"] {display: none !important;}
-    div[data-testid="stToolbar"] {display: none !important;}
-    button[title="View source on GitHub"] {display: none !important;}
-    .block-container {padding-top: 1rem !important; padding-bottom: 0rem !important;}
+    [data-testid="stHeader"], header, footer {display: none !important;}
+    .stAppDeployButton, [data-testid="stStatusWidget"], div[data-testid="stToolbar"] {display: none !important;}
+    .block-container {padding-top: 1rem !important;}
     </style>
-"""
-st.markdown(ultimate_hide_style, unsafe_allow_html=True)
+""", unsafe_allow_html=True)
 
 spreadsheet_url = st.secrets["connections"]["gsheets"]["spreadsheet"]
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 dani_std = ["Ponedjeljak", "Utorak", "Srijeda", "Četvrtak", "Petak", "Subota"]
-danasnji_dan_index = datetime.now().weekday() 
+danasnji_dan_index = datetime.now().weekday()
 mapa_ocjena = {"Loše": 1, "Može bolje": 2, "Dobro": 3, "Odlično": 4, "Savršeno": 5}
 
 # --- 2. KORISNICI ---
 users = {
     "admin": "admin123", 
-    "Lattonedil": "lattonedil321", 
-    "PVA Group": "pvagroup321", 
-    "Esintec": "esintec321", 
-    "ActivBH": "activbh321"
+    "Lattonedil": "lattonedil321", "PVA Group": "pvagroup321", 
+    "Esintec": "esintec321", "ActivBH": "activbh321"
 }
 
 # --- 3. FUNKCIJE ---
@@ -71,8 +62,14 @@ else:
         t_a1, t_a2, t_a3, t_a4 = st.tabs(["📊 Kuhinja", "📝 Izmjena Menija", "⭐ Ocjene", "🔄 Reset"])
         
         with t_a1:
-            st.subheader("👨‍🍳 Nalozi po smjenama")
+            df_m_t = ucitaj_sheet("Meni_Trenutni")
+            # VRAĆANJE INFO O KUVARU
+            kuvar = df_m_t[df_m_t['Dan'] == 'Kuvar']['Jelo'].values[0] if not df_m_t[df_m_t['Dan'] == 'Kuvar'].empty else "Nije unesen"
+            st.info(f"👨‍🍳 Glavni kuvar: **{kuvar}**")
+            
             df_nar = ucitaj_sheet("Sheet1")
+            prosjeci = izracunaj_prosjeke() # VRAĆANJE RANGIRANJA
+
             if not df_nar.empty:
                 d_sel = st.selectbox("Izaberi dan:", dani_std)
                 prikaz_df = df_nar[df_nar['Dan'] == f"Ova-{d_sel}"]
@@ -83,15 +80,21 @@ else:
                         if not smjena_data.empty:
                             with st.container(border=True):
                                 st.markdown(f"### 🕒 SMJENA {smjena}")
-                                st.markdown('<div style="display:flex; justify-content:space-between; border-bottom:1px solid #444; color:#888; font-size:0.8rem; padding-bottom:5px;"><div>JELO / FIRMA</div><div style="text-align:right;">KOLIČINA</div></div>', unsafe_allow_html=True)
-                                
                                 for jelo, jelo_data in smjena_data.groupby("Jelo"):
-                                    st.markdown(f'<div style="background-color:#1E1E1E; padding:8px; border-radius:5px; margin-top:10px; font-weight:bold; color:#FF4B4B; font-size:1.1rem;">{jelo}</div>', unsafe_allow_html=True)
+                                    # Prikaz jela sa RANGOM (prosječnom ocjenom)
+                                    rang = prosjeci.get(jelo, "Nema ocjena")
+                                    st.markdown(f"""
+                                        <div style="background-color:#1E1E1E; padding:8px; border-radius:5px; margin-top:10px;">
+                                            <span style="font-weight:bold; color:#FF4B4B; font-size:1.1rem;">{jelo}</span>
+                                            <span style="color:#FFAA00; font-size:0.9rem; margin-left:10px;">⭐ {rang}</span>
+                                        </div>
+                                    """, unsafe_allow_html=True)
+                                    
                                     for _, row in jelo_data.iterrows():
                                         st.markdown(f'<div style="display:flex; justify-content:space-between; padding:5px 10px; border-bottom:1px solid #333;"><div>🏢 {row["Firma"]}</div><div style="font-weight:bold;">{int(row["Kolicina"])} kom</div></div>', unsafe_allow_html=True)
                                     
                                     ukupno_jelo = int(jelo_data['Kolicina'].sum())
-                                    st.markdown(f'<div style="text-align:right; padding:5px; font-weight:bold; color:#00FF00; font-size:1rem;">UKUPNO {jelo}: {ukupno_jelo}</div>', unsafe_allow_html=True)
+                                    st.markdown(f'<div style="text-align:right; padding:5px; font-weight:bold; color:#00FF00;">UKUPNO {jelo}: {ukupno_jelo}</div>', unsafe_allow_html=True)
                 else: st.info(f"Nema narudžbi za {d_sel}.")
             else: st.info("Baza je prazna.")
 
@@ -101,6 +104,7 @@ else:
             df_m = ucitaj_sheet(od_m)
             with st.form(f"form_{od_m}"):
                 novi_podaci = []
+                # VRAĆANJE IZMJENE ZA KUVARA I ROK
                 for meta in ["Sedmica", "Rok", "Kuvar"]:
                     v = df_m[df_m['Dan'] == meta]['Jelo'].values[0] if not df_m[df_m['Dan'] == meta].empty else ""
                     nv = st.text_input(f"{meta}:", value=v)
@@ -118,7 +122,7 @@ else:
                     st.success("Meni sačuvan!"); time.sleep(1); st.rerun()
 
         with t_a3:
-            st.subheader("⭐ Ocjene")
+            st.subheader("⭐ Sve ocjene i komentari")
             st.dataframe(ucitaj_sheet("Ocjene"), use_container_width=True, hide_index=True)
 
         with t_a4:
@@ -134,7 +138,7 @@ else:
                     conn.update(spreadsheet=spreadsheet_url, worksheet="Sheet1", data=df_naredna)
                 st.success("Sistem rotiran!"); time.sleep(1); st.rerun()
 
-    # --- 6. KORISNIČKI PANEL ---
+    # --- 6. KORISNIČKI PANEL (OSTALJE ISTI) ---
     else:
         st.title(f"🍴 {st.session_state['user']}")
         t_t, t_n, t_h, t_o = st.tabs(["🍱 Ova Sedmica", "🚀 Naredna Sedmica", "📜 Istorija", "⭐ Ocijeni"])
@@ -147,7 +151,6 @@ else:
                 unosi = []
                 for dan in dani_std:
                     idx = dani_std.index(dan)
-                    # Pametno otključavanje nedjeljom (index 6)
                     onemoguci = False if danasnji_dan_index == 6 else (zakljucaj and danasnji_dan_index >= idx)
                     st.markdown(f"#### 📅 {dan} {'🔒' if onemoguci else '🔓'}")
                     jela = df_m[df_m['Dan'] == dan]['Jelo'].tolist()
@@ -168,7 +171,7 @@ else:
                     df_ostali = df_sve[~((df_sve['Firma'] == st.session_state['user']) & (df_sve['Dan'].str.startswith(prefix)))]
                     final = pd.concat([df_ostali, pd.DataFrame(unosi)], ignore_index=True)
                     conn.update(spreadsheet=spreadsheet_url, worksheet="Sheet1", data=final)
-                    st.success("Spremljeno!"); time.sleep(1); st.rerun()
+                    st.success("Spremljeno!"); st.rerun()
 
         with t_t: prikazi_klijent_formu("Meni_Trenutni", "Ova", True)
         with t_n: prikazi_klijent_formu("Meni_Naredni", "Naredna", False)
