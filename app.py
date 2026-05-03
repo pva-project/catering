@@ -27,7 +27,7 @@ spreadsheet_url = st.secrets["connections"]["gsheets"]["spreadsheet"]
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 dani_std = ["Ponedjeljak", "Utorak", "Srijeda", "Četvrtak", "Petak", "Subota"]
-danasnji_dan_index = datetime.now().weekday()
+danasnji_dan_index = datetime.now().weekday() # 0=Pon, 6=Ned
 mapa_ocjena = {"Loše": 1, "Može bolje": 2, "Dobro": 3, "Odlično": 4, "Savršeno": 5}
 
 # --- 2. KORISNICI ---
@@ -70,7 +70,7 @@ else:
         
         with t_a4:
             st.subheader("🔄 Rotacija Sedmica")
-            st.info("Ova opcija prebacuje 'Narednu' u 'Trenutnu' i ČUVA narudžbe koje su klijenti već unijeli unaprijed.")
+            st.info("Ovo prebacuje 'Narednu' u 'Trenutnu' i čuva narudžbe koje su klijenti već unijeli.")
             if st.button("🚀 IZVRŠI ROTACIJU", use_container_width=True):
                 df_next_menu = ucitaj_sheet("Meni_Naredni")
                 df_sve = ucitaj_sheet("Sheet1")
@@ -84,7 +84,7 @@ else:
                     df_naredna['Dan'] = df_naredna['Dan'].str.replace("Naredna", "Ova")
                     conn.update(spreadsheet=spreadsheet_url, worksheet="Sheet1", data=df_naredna)
                     
-                st.success("Sistem rotiran! Narudžbe sačuvane."); time.sleep(2); st.rerun()
+                st.success("Sistem rotiran! Narudžbe su prebačene."); time.sleep(2); st.rerun()
 
         with t_a1:
             df_nar = ucitaj_sheet("Sheet1")
@@ -94,15 +94,7 @@ else:
                 st.table(prikaz)
 
         with t_a2:
-            odabir_m = st.radio("Meni:", ["Meni_Trenutni", "Meni_Naredni"], horizontal=True)
-            df_m = ucitaj_sheet(odabir_m)
-            with st.form(f"f_admin_{odabir_m}"):
-                st.write(f"Uređivanje: {odabir_m}")
-                st.info("Unesite jela za svaki dan (Dan | Jelo)")
-                st.data_editor(df_m, num_rows="dynamic", use_container_width=True, key=f"editor_{odabir_m}")
-                if st.form_submit_button("Sačuvaj izmjene"):
-                    # Ovdje bi išla logika za spremanje editora ako koristiš st.data_editor
-                    st.warning("Za direktno uređivanje tabela koristi Google Sheets link, ili mi javi da napravim polja za unos.")
+            st.write("Uređivanje menija vršite direktno u Google Sheets tabeli radi sigurnosti podataka.")
 
     # --- 6. KORISNIČKI PANEL ---
     else:
@@ -113,13 +105,22 @@ else:
         def prikazi_formu(sheet_name, prefix, zakljucaj):
             df_m = ucitaj_sheet(sheet_name)
             df_sve = ucitaj_sheet("Sheet1")
+            
             with st.form(f"f_{prefix}"):
                 unose = []
                 for dan in dani_std:
                     idx = dani_std.index(dan)
-                    onemoguci = (zakljucaj and danasnji_dan_index >= idx)
-                    st.markdown(f"#### 📅 {dan}")
+                    
+                    # LOGIKA ZAKLJUČAVANJA:
+                    # Ako je nedjelja (danasnji_dan_index == 6), ništa nije zaključano za 'Ova' jer je to nova sedmica.
+                    if danasnji_dan_index == 6:
+                        onemoguci = False
+                    else:
+                        onemoguci = (zakljucaj and danasnji_dan_index >= idx)
+                    
+                    st.markdown(f"#### 📅 {dan} {'🔒' if onemoguci else '🔓'}")
                     jela = df_m[df_m['Dan'] == dan]['Jelo'].tolist()
+                    
                     for j in jela:
                         col1, col2, col3 = st.columns(3)
                         mask = (df_sve['Firma']==st.session_state['user']) & (df_sve['Dan']==f"{prefix}-{dan}") & (df_sve['Jelo']==j)
@@ -138,7 +139,7 @@ else:
                     df_ostali = df_sve[~((df_sve['Firma'] == st.session_state['user']) & (df_sve['Dan'].str.startswith(prefix)))]
                     novo = pd.concat([df_ostali, pd.DataFrame(unose)], ignore_index=True)
                     conn.update(spreadsheet=spreadsheet_url, worksheet="Sheet1", data=novo)
-                    st.success("Spremljeno!"); st.rerun()
+                    st.success("Spremljeno!"); time.sleep(1); st.rerun()
 
         with t_t: prikazi_formu("Meni_Trenutni", "Ova", True)
         with t_n: prikazi_formu("Meni_Naredni", "Naredna", False)
@@ -149,19 +150,18 @@ else:
             if not df_istorija.empty:
                 moje = df_istorija[df_istorija['Firma'] == st.session_state['user']]
                 st.dataframe(moje, use_container_width=True, hide_index=True)
-            else:
-                st.write("Nema istorije narudžbi.")
 
         with t_o:
             st.subheader("⭐ Ocijeni jelo")
             df_m_t = ucitaj_sheet("Meni_Trenutni")
-            sva_j = df_m_t[df_m_t['Dan'].isin(dani_std)]['Jelo'].unique().tolist()
-            with st.form("forma_ocjena", clear_on_submit=True):
-                od_j = st.selectbox("Izaberi jelo:", sva_j)
-                ocj = st.select_slider("Ocjena:", options=["Loše", "Može bolje", "Dobro", "Odlično", "Savršeno"], value="Odlično")
-                kom = st.text_area("Komentar (opciono):")
-                if st.form_submit_button("Pošalji ocjenu"):
-                    df_o_p = ucitaj_sheet("Ocjene")
-                    nova_o = pd.DataFrame([{"Firma": st.session_state['user'], "Jelo": od_j, "Ocjena": ocj, "Komentar": kom}])
-                    conn.update(spreadsheet=spreadsheet_url, worksheet="Ocjene", data=pd.concat([df_o_p, nova_o], ignore_index=True))
-                    st.success("Hvala na ocjeni!"); time.sleep(1); st.rerun()
+            if not df_m_t.empty:
+                sva_j = df_m_t[df_m_t['Dan'].isin(dani_std)]['Jelo'].unique().tolist()
+                with st.form("forma_ocjena", clear_on_submit=True):
+                    od_j = st.selectbox("Izaberi jelo:", sva_j)
+                    ocj = st.select_slider("Ocjena:", options=["Loše", "Može bolje", "Dobro", "Odlično", "Savršeno"], value="Odlično")
+                    kom = st.text_area("Komentar:")
+                    if st.form_submit_button("Pošalji"):
+                        df_o_p = ucitaj_sheet("Ocjene")
+                        nova_o = pd.DataFrame([{"Firma": st.session_state['user'], "Jelo": od_j, "Ocjena": ocj, "Komentar": kom}])
+                        conn.update(spreadsheet=spreadsheet_url, worksheet="Ocjene", data=pd.concat([df_o_p, nova_o], ignore_index=True))
+                        st.success("Hvala!"); time.sleep(1); st.rerun()
