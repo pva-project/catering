@@ -4,7 +4,7 @@ from streamlit_gsheets import GSheetsConnection
 from datetime import datetime
 import time
 
-# --- 1. KONFIGURACIJA I SKRIVANJE SVIH IKONA (FORK, GITHUB, KRUNICA) ---
+# --- 1. TOTALNO SKRIVANJE SVIH IKONA I CLEAN DIZAJN ---
 st.set_page_config(page_title="Catering Management", layout="centered")
 
 ultimate_hide_style = """
@@ -26,7 +26,7 @@ spreadsheet_url = st.secrets["connections"]["gsheets"]["spreadsheet"]
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 dani_std = ["Ponedjeljak", "Utorak", "Srijeda", "Četvrtak", "Petak", "Subota"]
-danasnji_dan_index = datetime.now().weekday() # 0=Pon, 6=Ned
+danasnji_dan_index = datetime.now().weekday() 
 mapa_ocjena = {"Loše": 1, "Može bolje": 2, "Dobro": 3, "Odlično": 4, "Savršeno": 5}
 
 # --- 2. KORISNICI ---
@@ -51,7 +51,7 @@ def izracunaj_prosjeke():
     df_o['Numericka'] = df_o['Ocjena'].map(mapa_ocjena)
     return df_o.groupby('Jelo')['Numericka'].mean().round(1).to_dict()
 
-# --- 4. LOGIN SISTEM ---
+# --- 4. LOGIN ---
 if "logged_in" not in st.session_state: st.session_state["logged_in"] = False
 
 if not st.session_state["logged_in"]:
@@ -83,7 +83,7 @@ else:
                         if not smjena_data.empty:
                             with st.container(border=True):
                                 st.markdown(f"### 🕒 SMJENA {smjena}")
-                                st.markdown('<div style="display:flex; justify-content:space-between; border-bottom:1px solid #444; color:#888; font-size:0.8rem;"><div>JELO / FIRMA</div><div style="text-align:right;">KOLIČINA</div></div>', unsafe_allow_html=True)
+                                st.markdown('<div style="display:flex; justify-content:space-between; border-bottom:1px solid #444; color:#888; font-size:0.8rem; padding-bottom:5px;"><div>JELO / FIRMA</div><div style="text-align:right;">KOLIČINA</div></div>', unsafe_allow_html=True)
                                 
                                 for jelo, jelo_data in smjena_data.groupby("Jelo"):
                                     st.markdown(f'<div style="background-color:#1E1E1E; padding:8px; border-radius:5px; margin-top:10px; font-weight:bold; color:#FF4B4B; font-size:1.1rem;">{jelo}</div>', unsafe_allow_html=True)
@@ -91,7 +91,7 @@ else:
                                         st.markdown(f'<div style="display:flex; justify-content:space-between; padding:5px 10px; border-bottom:1px solid #333;"><div>🏢 {row["Firma"]}</div><div style="font-weight:bold;">{int(row["Kolicina"])} kom</div></div>', unsafe_allow_html=True)
                                     
                                     ukupno_jelo = int(jelo_data['Kolicina'].sum())
-                                    st.markdown(f'<div style="text-align:right; padding:5px; font-weight:bold; color:#00FF00; font-size:0.9rem;">UKUPNO {jelo}: {ukupno_jelo}</div>', unsafe_allow_html=True)
+                                    st.markdown(f'<div style="text-align:right; padding:5px; font-weight:bold; color:#00FF00; font-size:1rem;">UKUPNO {jelo}: {ukupno_jelo}</div>', unsafe_allow_html=True)
                 else: st.info(f"Nema narudžbi za {d_sel}.")
             else: st.info("Baza je prazna.")
 
@@ -123,7 +123,7 @@ else:
 
         with t_a4:
             st.subheader("🔄 Rotacija Sedmica")
-            if st.button("🚀 IZVRŠI ROTACIJU (Prebaci Narednu u Trenutnu)"):
+            if st.button("🚀 IZVRŠI ROTACIJU"):
                 df_next = ucitaj_sheet("Meni_Naredni")
                 df_sve = ucitaj_sheet("Sheet1")
                 if not df_next.empty:
@@ -147,6 +147,7 @@ else:
                 unosi = []
                 for dan in dani_std:
                     idx = dani_std.index(dan)
+                    # Pametno otključavanje nedjeljom (index 6)
                     onemoguci = False if danasnji_dan_index == 6 else (zakljucaj and danasnji_dan_index >= idx)
                     st.markdown(f"#### 📅 {dan} {'🔒' if onemoguci else '🔓'}")
                     jela = df_m[df_m['Dan'] == dan]['Jelo'].tolist()
@@ -167,7 +168,7 @@ else:
                     df_ostali = df_sve[~((df_sve['Firma'] == st.session_state['user']) & (df_sve['Dan'].str.startswith(prefix)))]
                     final = pd.concat([df_ostali, pd.DataFrame(unosi)], ignore_index=True)
                     conn.update(spreadsheet=spreadsheet_url, worksheet="Sheet1", data=final)
-                    st.success("Spremljeno!"); st.rerun()
+                    st.success("Spremljeno!"); time.sleep(1); st.rerun()
 
         with t_t: prikazi_klijent_formu("Meni_Trenutni", "Ova", True)
         with t_n: prikazi_klijent_formu("Meni_Naredni", "Naredna", False)
