@@ -4,7 +4,7 @@ from streamlit_gsheets import GSheetsConnection
 from datetime import datetime
 import time
 
-# --- 1. STILIZACIJA (Identično tvojim slikama) ---
+# --- 1. STILIZACIJA (Kuhinja dizajn + Info kartice) ---
 st.set_page_config(page_title="Catering System", layout="centered")
 
 st.markdown("""
@@ -104,7 +104,7 @@ else:
         st.title("👨‍🍳 Admin Upravljanje")
         t1, t2, t3, t4 = st.tabs(["📊 Kuhinja", "📝 Meni", "⭐ Ocjene", "🔄 Reset"])
         
-        with t1: # KUHINJA (FIKSIRANO)
+        with t1:
             df_nar = ucitaj_sheet("Sheet1")
             dan_sel = st.selectbox("Izaberi dan:", dani_std)
             if not df_nar.empty:
@@ -143,7 +143,7 @@ else:
                     conn.update(spreadsheet=spreadsheet_url, worksheet=od_m, data=pd.DataFrame(novi))
                     st.success("Sačuvano!"); time.sleep(1); st.rerun()
 
-        with t3: # OCJENE (VRAĆENO)
+        with t3: # OCJENE ADMIN
             df_o = ucitaj_sheet("Ocjene")
             pj, pk = izracunaj_prosjeke()
             if pk:
@@ -162,7 +162,7 @@ else:
     # --- 5. KLIJENT PANEL ---
     else:
         st.title(f"🍴 {st.session_state['user']}")
-        t_o, t_n, t_oc = st.tabs(["🍱 Ova Sedmica", "🚀 Naredna", "⭐ Ocijeni"])
+        t_o, t_n, t_h, t_oc = st.tabs(["🍱 Ova Sedmica", "🚀 Naredna", "📜 Istorija", "⭐ Ocijeni"])
         pj, _ = izracunaj_prosjeke()
 
         def render_c(sh, pref, lock):
@@ -198,7 +198,15 @@ else:
 
         with t_o: render_c("Meni_Trenutni", "Ova", True)
         with t_n: render_c("Meni_Naredni", "Naredna", False)
-        with t_oc: # OCIJENI (VRAĆENO)
+        
+        with t_h: # ISTORIJA (DODATO)
+            df_sve = ucitaj_sheet("Sheet1")
+            if not df_sve.empty:
+                moje = df_sve[df_sve['Firma'] == st.session_state['user']]
+                st.dataframe(moje, use_container_width=True, hide_index=True)
+            else: st.info("Nema podataka o istoriji.")
+
+        with t_oc: # OCIJENI
             df_m_t = ucitaj_sheet("Meni_Trenutni")
             k_t = df_m_t[df_m_t['Dan'] == 'Kuvar']['Jelo'].values[0] if not df_m_t.empty else "N/A"
             jela = df_m_t[df_m_t['Dan'].isin(dani_std)]['Jelo'].unique().tolist() if not df_m_t.empty else []
