@@ -4,7 +4,7 @@ from streamlit_gsheets import GSheetsConnection
 from datetime import datetime
 import time
 
-# --- 1. STILIZACIJA (Kuhinja dizajn + Info kartice) ---
+# --- 1. STILIZACIJA ---
 st.set_page_config(page_title="Catering System", layout="centered")
 
 st.markdown("""
@@ -14,7 +14,6 @@ st.markdown("""
     footer {display: none !important; visibility: hidden !important;}
     .block-container {padding-top: 1rem !important;}
     
-    /* Kuhinja dizajn (Admin) */
     .kuhinja-box {
         background-color: #11141C;
         border: 1px solid #333;
@@ -59,7 +58,6 @@ st.markdown("""
         padding: 10px 15px;
     }
     
-    /* Info kartice (Klijent) */
     .info-container { display: flex; justify-content: space-between; gap: 10px; margin-bottom: 20px; }
     .info-card { flex: 1; padding: 15px; border-radius: 10px; text-align: center; color: white; font-weight: bold; }
     .blue-card { background-color: #1e3a5f; border: 1px solid #3b82f6; }
@@ -104,7 +102,7 @@ else:
         st.title("👨‍🍳 Admin Upravljanje")
         t1, t2, t3, t4 = st.tabs(["📊 Kuhinja", "📝 Meni", "⭐ Ocjene", "🔄 Reset"])
         
-        with t1:
+        with t1: # KUHINJA
             df_nar = ucitaj_sheet("Sheet1")
             dan_sel = st.selectbox("Izaberi dan:", dani_std)
             if not df_nar.empty:
@@ -122,23 +120,28 @@ else:
                         html += '</div>'
                         st.markdown(html, unsafe_allow_html=True)
 
-        with t2: # MENI
+        with t2: # MENI - ISPRAVLJENO DA PIŠE JELO 1, 2, 3
             od_m = st.radio("Uredi:", ["Meni_Trenutni", "Meni_Naredni"], horizontal=True)
             df_m = ucitaj_sheet(od_m)
             with st.form(f"f_{od_m}"):
                 c1,c2,c3 = st.columns(3)
-                v_s = df_m[df_m['Dan']=='Sedmica']['Jelo'].values[0] if not df_m.empty else ""
-                v_r = df_m[df_m['Dan']=='Rok']['Jelo'].values[0] if not df_m.empty else ""
-                v_k = df_m[df_m['Dan']=='Kuvar']['Jelo'].values[0] if not df_m.empty else ""
+                v_s = df_m[df_m['Dan']=='Sedmica']['Jelo'].values[0] if not df_m.empty and len(df_m[df_m['Dan']=='Sedmica'])>0 else ""
+                v_r = df_m[df_m['Dan']=='Rok']['Jelo'].values[0] if not df_m.empty and len(df_m[df_m['Dan']=='Rok'])>0 else ""
+                v_k = df_m[df_m['Dan']=='Kuvar']['Jelo'].values[0] if not df_m.empty and len(df_m[df_m['Dan']=='Kuvar'])>0 else ""
                 n_s = c1.text_input("Period:", v_s); n_r = c2.text_input("Rok:", v_r); n_k = c3.text_input("Kuvar:", v_k)
+                
                 novi = [{"Dan":"Sedmica","Jelo":n_s},{"Dan":"Rok","Jelo":n_r},{"Dan":"Kuvar","Jelo":n_k}]
                 for d in dani_std:
-                    st.write(f"**{d}**")
+                    st.markdown(f"**{d}**")
                     p_jela = df_m[df_m['Dan']==d]['Jelo'].tolist() if not df_m.empty else []
+                    col1, col2, col3 = st.columns(3)
+                    p_cols = [col1, col2, col3]
                     for i in range(3):
                         stara = p_jela[i] if i < len(p_jela) else ""
-                        un = st.text_input(f"{d} {i+1}", stara, key=f"e_{od_m}_{d}_{i}")
+                        # Ovdje je ispravljeno:
+                        un = p_cols[i].text_input(f"Jelo {i+1}", stara, key=f"e_{od_m}_{d}_{i}")
                         if un: novi.append({"Dan":d, "Jelo":un})
+                
                 if st.form_submit_button("SAČUVAJ"):
                     conn.update(spreadsheet=spreadsheet_url, worksheet=od_m, data=pd.DataFrame(novi))
                     st.success("Sačuvano!"); time.sleep(1); st.rerun()
@@ -179,7 +182,8 @@ else:
                     dis = (lock and datetime.now().weekday() >= idx and datetime.now().weekday() != 6)
                     with st.container(border=True):
                         st.markdown(f"#### 📅 {d}")
-                        for j in (df_m[df_m['Dan']==d]['Jelo'].tolist() if not df_m.empty else []):
+                        jela = df_m[df_m['Dan']==d]['Jelo'].tolist() if not df_m.empty else []
+                        for j in jela:
                             st.write(f"**{j}** {f'(⭐ {pj.get(j)})' if pj.get(j) else ''}")
                             c1,c2,c3 = st.columns(3)
                             def g_v(sn):
@@ -199,14 +203,14 @@ else:
         with t_o: render_c("Meni_Trenutni", "Ova", True)
         with t_n: render_c("Meni_Naredni", "Naredna", False)
         
-        with t_h: # ISTORIJA (DODATO)
+        with t_h: # ISTORIJA ZA KLIJENTA
             df_sve = ucitaj_sheet("Sheet1")
             if not df_sve.empty:
                 moje = df_sve[df_sve['Firma'] == st.session_state['user']]
                 st.dataframe(moje, use_container_width=True, hide_index=True)
             else: st.info("Nema podataka o istoriji.")
 
-        with t_oc: # OCIJENI
+        with t_oc: # OCJENJIVANJE
             df_m_t = ucitaj_sheet("Meni_Trenutni")
             k_t = df_m_t[df_m_t['Dan'] == 'Kuvar']['Jelo'].values[0] if not df_m_t.empty else "N/A"
             jela = df_m_t[df_m_t['Dan'].isin(dani_std)]['Jelo'].unique().tolist() if not df_m_t.empty else []
