@@ -5,7 +5,7 @@ from datetime import datetime
 import re
 import time
 
-# --- 1. STILIZACIJA (Nepromijenjeno) ---
+# --- 1. STILIZACIJA ---
 st.set_page_config(page_title="Catering System", layout="centered")
 
 st.markdown("""
@@ -67,7 +67,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 2. POVEZIVANJE I FUNKCIJE (Nepromijenjeno + Pomoćna za sat) ---
+# --- 2. POVEZIVANJE I FUNKCIJE ---
 spreadsheet_url = st.secrets["connections"]["gsheets"]["spreadsheet"]
 conn = st.connection("gsheets", type=GSheetsConnection)
 dani_std = ["Ponedjeljak", "Utorak", "Srijeda", "Četvrtak", "Petak", "Subota"]
@@ -87,14 +87,13 @@ def izracunaj_prosjeke():
     return pj, pk
 
 def izvadi_sat_iz_roka(rok_tekst):
-    """Izvlači broj iz 'Do 16:00' -> 16"""
     try:
         brojevi = re.findall(r'\d+', str(rok_tekst))
         return int(brojevi[0]) if brojevi else 14
     except:
         return 14
 
-# --- 3. LOGIN (Nepromijenjeno) ---
+# --- 3. LOGIN ---
 if "logged_in" not in st.session_state: st.session_state["logged_in"] = False
 
 if not st.session_state["logged_in"]:
@@ -106,7 +105,7 @@ if not st.session_state["logged_in"]:
             st.session_state["logged_in"], st.session_state["user"] = True, u
             st.rerun()
 else:
-    # --- 4. ADMIN PANEL (Nepromijenjeno) ---
+    # --- 4. ADMIN PANEL ---
     if st.session_state["user"] == "admin":
         st.title("👨‍🍳 Admin Upravljanje")
         t1, t2, t3, t4 = st.tabs(["📊 Kuhinja", "📝 Meni", "⭐ Ocjene", "🔄 Reset"])
@@ -182,16 +181,18 @@ else:
             rok_tekst = df_m[df_m['Dan']=='Rok']['Jelo'].values[0] if not df_m.empty else "14:00"
             k = df_m[df_m['Dan']=='Kuvar']['Jelo'].values[0] if not df_m.empty else "/"
             
-            # --- DODATAK: TAJMER ---
+            # --- LOGIKA TAJMERA ---
             sat_limita = izvadi_sat_iz_roka(rok_tekst)
             sada = datetime.now()
             danas_idx = sada.weekday()
             trenutni_sat = sada.hour
             
+            # Rok za SUTRA je DANAS u sat_limita
+            rok_za_sutra = sada.replace(hour=sat_limita, minute=0, second=0, microsecond=0)
+            
             if lock:
-                rok_danas = sada.replace(hour=sat_limita, minute=0, second=0, microsecond=0)
-                if sada < rok_danas:
-                    preostalo = rok_danas - sada
+                if sada < rok_za_sutra:
+                    preostalo = rok_za_sutra - sada
                     sati, ostatak = divmod(preostalo.seconds, 3600)
                     minuti, _ = divmod(ostatak, 60)
                     st.info(f"⏳ **Narudžbe za SUTRA su otvorene još: {sati}h {minuti}min**")
@@ -205,7 +206,11 @@ else:
                 unose = []
                 for d in dani_std:
                     idx = dani_std.index(d)
-                    # DINAMIČKO ZAKLJUČAVANJE PREMA ROKU
+                    
+                    # Logika zaključavanja:
+                    # 1. Ako je dan već prošao (danas_idx > idx) -> ZAKLJUČANO
+                    # 2. Ako je dan DANAS (danas_idx == idx) -> ZAKLJUČANO
+                    # 3. Ako je dan SUTRA (danas_idx + 1 == idx) -> ZAKLJUČAJ TEK AKO JE PROŠAO SAT ROKA
                     prekasno_za_sutra = (danas_idx + 1 == idx and trenutni_sat >= sat_limita)
                     dis = (lock and (danas_idx >= idx or prekasno_za_sutra) and danas_idx != 6)
                     
@@ -233,14 +238,14 @@ else:
         with t_o: render_c("Meni_Trenutni", "Ova", True)
         with t_n: render_c("Meni_Naredni", "Naredna", False)
         
-        with t_h: # ISTORIJA (Nepromijenjeno)
+        with t_h: # ISTORIJA
             df_sve = ucitaj_sheet("Sheet1")
             if not df_sve.empty:
                 moje = df_sve[df_sve['Firma'] == st.session_state['user']]
                 st.dataframe(moje, use_container_width=True, hide_index=True)
             else: st.info("Nema podataka o istoriji.")
 
-        with t_oc: # OCJENJIVANJE (Nepromijenjeno)
+        with t_oc: # OCJENJIVANJE
             df_m_t = ucitaj_sheet("Meni_Trenutni")
             k_t = df_m_t[df_m_t['Dan'] == 'Kuvar']['Jelo'].values[0] if not df_m_t.empty else "N/A"
             jela = df_m_t[df_m_t['Dan'].isin(dani_std)]['Jelo'].unique().tolist() if not df_m_t.empty else []
