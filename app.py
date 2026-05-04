@@ -120,7 +120,7 @@ else:
                         html += '</div>'
                         st.markdown(html, unsafe_allow_html=True)
 
-        with t2: # MENI - ISPRAVLJENO DA PIŠE JELO 1, 2, 3
+        with t2: # MENI
             od_m = st.radio("Uredi:", ["Meni_Trenutni", "Meni_Naredni"], horizontal=True)
             df_m = ucitaj_sheet(od_m)
             with st.form(f"f_{od_m}"):
@@ -138,7 +138,6 @@ else:
                     p_cols = [col1, col2, col3]
                     for i in range(3):
                         stara = p_jela[i] if i < len(p_jela) else ""
-                        # Ovdje je ispravljeno:
                         un = p_cols[i].text_input(f"Jelo {i+1}", stara, key=f"e_{od_m}_{d}_{i}")
                         if un: novi.append({"Dan":d, "Jelo":un})
                 
@@ -190,9 +189,12 @@ else:
                                 if df_sve.empty: return 0
                                 m = df_sve[(df_sve['Firma']==st.session_state['user']) & (df_sve['Dan']==f"{pref}-{d}") & (df_sve['Jelo']==j) & (df_sve['Smjena']==sn)]
                                 return int(m['Kolicina'].iloc[0]) if not m.empty else 0
-                            k1=c1.number_input("I",0,100,g_v("I"),key=f"{pref}{d}{j}1",disabled=dis)
-                            k2=c2.number_input("II",0,100,g_v("II"),key=f"{pref}{d}{j}2",disabled=dis)
-                            k3=c3.number_input("III",0,100,g_v("III"),key=f"{pref}{d}{j}3",disabled=dis)
+                            
+                            # ISPRAVLJENE LABELE ZA SMJENE
+                            k1=c1.number_input("I SMJENA",0,100,g_v("I"),key=f"{pref}{d}{j}1",disabled=dis)
+                            k2=c2.number_input("II SMJENA",0,100,g_v("II"),key=f"{pref}{d}{j}2",disabled=dis)
+                            k3=c3.number_input("III SMJENA",0,100,g_v("III"),key=f"{pref}{d}{j}3",disabled=dis)
+                            
                             for v, sn in zip([k1,k2,k3],["I","II","III"]):
                                 if v > 0: unose.append({"Firma":st.session_state['user'], "Dan":f"{pref}-{d}", "Jelo":j, "Kolicina":v, "Smjena":sn})
                 if st.form_submit_button("SAČUVAJ"):
