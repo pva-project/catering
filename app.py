@@ -5,7 +5,7 @@ from datetime import datetime
 import re
 import time
 
-# --- 1. STILIZACIJA ---
+# --- 1. STILIZACIJA (Originalni dizajn) ---
 st.set_page_config(page_title="Catering System", layout="centered")
 
 st.markdown("""
@@ -67,7 +67,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 2. POVEZIVANJE I FUNKCIJE ---
+# --- 2. POMOĆNE FUNKCIJE ---
 spreadsheet_url = st.secrets["connections"]["gsheets"]["spreadsheet"]
 conn = st.connection("gsheets", type=GSheetsConnection)
 dani_std = ["Ponedjeljak", "Utorak", "Srijeda", "Četvrtak", "Petak", "Subota"]
@@ -93,7 +93,7 @@ def izvadi_sat_iz_roka(rok_tekst):
     except:
         return 14
 
-# --- 3. LOGIN ---
+# --- 3. LOGIN SISTEM ---
 if "logged_in" not in st.session_state: st.session_state["logged_in"] = False
 
 if not st.session_state["logged_in"]:
@@ -110,7 +110,7 @@ else:
         st.title("👨‍🍳 Admin Upravljanje")
         t1, t2, t3, t4 = st.tabs(["📊 Kuhinja", "📝 Meni", "⭐ Ocjene", "🔄 Reset"])
         
-        with t1: # KUHINJA
+        with t1: # KUHINJA PREGLED
             df_nar = ucitaj_sheet("Sheet1")
             dan_sel = st.selectbox("Izaberi dan:", dani_std)
             if not df_nar.empty:
@@ -128,7 +128,7 @@ else:
                         html += '</div>'
                         st.markdown(html, unsafe_allow_html=True)
 
-        with t2: # MENI
+        with t2: # EDIT MENIJA
             od_m = st.radio("Uredi:", ["Meni_Trenutni", "Meni_Naredni"], horizontal=True)
             df_m = ucitaj_sheet(od_m)
             with st.form(f"f_{od_m}"):
@@ -153,7 +153,7 @@ else:
                     conn.update(spreadsheet=spreadsheet_url, worksheet=od_m, data=pd.DataFrame(novi))
                     st.success("Sačuvano!"); time.sleep(1); st.rerun()
 
-        with t3: # OCJENE ADMIN
+        with t3: # OCJENE
             df_o = ucitaj_sheet("Ocjene")
             pj, pk = izracunaj_prosjeke()
             if pk:
@@ -162,7 +162,7 @@ else:
             st.divider()
             st.dataframe(df_o, use_container_width=True, hide_index=True)
 
-        with t4: # RESET
+        with t4: # ROTACIJA SEDMICA
             if st.button("🚀 ROTIRAJ SEDMICE"):
                 df_n = ucitaj_sheet("Meni_Naredni")
                 if not df_n.empty:
@@ -178,27 +178,24 @@ else:
         def render_c(sh, pref, lock):
             df_m = ucitaj_sheet(sh); df_sve = ucitaj_sheet("Sheet1")
             s = df_m[df_m['Dan']=='Sedmica']['Jelo'].values[0] if not df_m.empty else "/"
-            rok_tekst = df_m[df_m['Dan']=='Rok']['Jelo'].values[0] if not df_m.empty else "14:00"
+            rok_tekst = df_m[df_m['Dan']=='Rok']['Jelo'].values[0] if not df_m.empty else "16:00"
             k = df_m[df_m['Dan']=='Kuvar']['Jelo'].values[0] if not df_m.empty else "/"
             
-            # --- LOGIKA TAJMERA ---
+            # --- LOGIKA TAJMERA (RESETOVANJE U PONOĆ) ---
             sat_limita = izvadi_sat_iz_roka(rok_tekst)
             sada = datetime.now()
             danas_idx = sada.weekday()
             trenutni_sat = sada.hour
             
-            # Rok za SUTRA je DANAS u sat_limita
-            rok_za_sutra = sada.replace(hour=sat_limita, minute=0, second=0, microsecond=0)
-            
             if lock:
-                if sada < rok_za_sutra:
-                    preostalo = rok_za_sutra - sada
-                    sati, ostatak = divmod(preostalo.seconds, 3600)
-                    minuti, _ = divmod(ostatak, 60)
-                    st.info(f"⏳ **Narudžbe za SUTRA su otvorene još: {sati}h {minuti}min**")
+                # Ako je sat trenutno manji od roka (npr. 02:00h ujutro < 16:00h)
+                if trenutni_sat < sat_limita:
+                    ostalo_sati = sat_limita - trenutni_sat - 1
+                    ostalo_minuta = 60 - sada.minute
+                    st.info(f"⏳ **Narudžbe za SUTRA su otvorene još: {ostalo_sati}h {ostalo_minuta}min**")
                 else:
+                    # Samo nakon što sat pređe rok (npr. 16:01h), prikazuje grešku do kraja dana
                     st.error(f"🔒 **Rok ({rok_tekst}) za sutrašnju narudžbu je istekao!**")
-            # ----------------------
 
             st.markdown(f'<div class="info-container"><div class="info-card blue-card">📅 {s}</div><div class="info-card yellow-card">⏰ ROK: {rok_tekst}</div><div class="info-card green-card">👨‍🍳 {k}</div></div>', unsafe_allow_html=True)
             
@@ -207,12 +204,20 @@ else:
                 for d in dani_std:
                     idx = dani_std.index(d)
                     
-                    # Logika zaključavanja:
-                    # 1. Ako je dan već prošao (danas_idx > idx) -> ZAKLJUČANO
-                    # 2. Ako je dan DANAS (danas_idx == idx) -> ZAKLJUČANO
-                    # 3. Ako je dan SUTRA (danas_idx + 1 == idx) -> ZAKLJUČAJ TEK AKO JE PROŠAO SAT ROKA
-                    prekasno_za_sutra = (danas_idx + 1 == idx and trenutni_sat >= sat_limita)
-                    dis = (lock and (danas_idx >= idx or prekasno_za_sutra) and danas_idx != 6)
+                    if not lock:
+                        dis = False
+                    else:
+                        is_proslost = danas_idx > idx
+                        is_danas = danas_idx == idx
+                        is_sutra = (danas_idx + 1 == idx)
+                        
+                        if is_proslost or is_danas:
+                            dis = True
+                        elif is_sutra:
+                            # Sutrašnji dan se zaključava samo ako je danas prošao sat limita
+                            dis = (trenutni_sat >= sat_limita)
+                        else:
+                            dis = False
                     
                     icon = "🔒" if dis else "📅"
                     with st.container(border=True):
@@ -225,11 +230,14 @@ else:
                                 if df_sve.empty: return 0
                                 m = df_sve[(df_sve['Firma']==st.session_state['user']) & (df_sve['Dan']==f"{pref}-{d}") & (df_sve['Jelo']==j) & (df_sve['Smjena']==sn)]
                                 return int(m['Kolicina'].iloc[0]) if not m.empty else 0
+                            
                             k1=c1.number_input("I SMJENA",0,100,g_v("I"),key=f"{pref}{d}{j}1",disabled=dis)
                             k2=c2.number_input("II SMJENA",0,100,g_v("II"),key=f"{pref}{d}{j}2",disabled=dis)
                             k3=c3.number_input("III SMJENA",0,100,g_v("III"),key=f"{pref}{d}{j}3",disabled=dis)
+                            
                             for v, sn in zip([k1,k2,k3],["I","II","III"]):
                                 if v > 0: unose.append({"Firma":st.session_state['user'], "Dan":f"{pref}-{d}", "Jelo":j, "Kolicina":v, "Smjena":sn})
+                
                 if st.form_submit_button("SAČUVAJ"):
                     df_ost = df_sve[~((df_sve['Firma']==st.session_state['user']) & (df_sve['Dan'].str.startswith(pref)))] if not df_sve.empty else pd.DataFrame()
                     conn.update(spreadsheet=spreadsheet_url, worksheet="Sheet1", data=pd.concat([df_ost, pd.DataFrame(unose)]))
