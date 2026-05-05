@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 import re
 import time
 
-# --- 1. STILIZACIJA (Zadržan stil sa tvojih slika) ---
+# --- 1. STILIZACIJA ---
 st.set_page_config(page_title="Catering System", layout="centered")
 
 st.markdown("""
@@ -38,6 +38,19 @@ st.markdown("""
     .jelo-title { background-color: #1A1C23; color: #E24A4A; padding: 10px; border-radius: 5px; font-weight: bold; margin-top: 10px; }
     .row-firma { display: flex; justify-content: space-between; padding: 8px 10px; border-bottom: 1px solid #222; font-size: 0.9rem; }
     .jelo-ukupno { text-align: right; color: #00FF00; font-weight: bold; padding: 10px; }
+
+    /* NOVI IZGLED ZA RESET ZONU */
+    .reset-card {
+        background: linear-gradient(145deg, #1e1e26, #14141a);
+        border: 1px dashed #E24A4A;
+        border-radius: 20px;
+        padding: 40px 20px;
+        text-align: center;
+        margin-top: 20px;
+    }
+    .reset-icon { font-size: 3rem; margin-bottom: 10px; }
+    .reset-warning { color: #ff4b4b; font-weight: bold; font-size: 1.2rem; margin-bottom: 5px; }
+    .reset-desc { color: #888; font-size: 0.9rem; margin-bottom: 25px; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -83,7 +96,7 @@ else:
         st.markdown('<div class="admin-title">👨‍🍳 Admin Panel</div>', unsafe_allow_html=True)
         t1, t2, t3, t4 = st.tabs(["📊 Kuhinja", "📝 Meni", "⭐ Ocjene", "🔄 Reset"])
         
-        with t1: # KUHINJA
+        with t1: # KUHINJA (Nepromijenjeno)
             df_nar = ucitaj_sheet("Sheet1")
             df_meni_t = ucitaj_sheet("Meni_Trenutni")
             rok_tekst = df_meni_t[df_meni_t['Dan']=='Rok']['Jelo'].values[0] if not df_meni_t.empty else "16:00"
@@ -116,7 +129,7 @@ else:
                             h_box += f'<div class="jelo-ukupno">UKUPNO: {int(j_d["Kolicina"].sum())}</div>'
                         st.markdown(h_box + '</div>', unsafe_allow_html=True)
 
-        with t2: # --- TAB MENI (SAD RADI) ---
+        with t2: # MENI (Nepromijenjeno)
             od_m = st.radio("Uredi:", ["Meni_Trenutni", "Meni_Naredni"], horizontal=True)
             df_m = ucitaj_sheet(od_m)
             with st.form(f"f_{od_m}"):
@@ -140,7 +153,7 @@ else:
                     conn.update(spreadsheet=spreadsheet_url, worksheet=od_m, data=pd.DataFrame(novi))
                     st.success("Sačuvano!"); time.sleep(1); st.rerun()
 
-        with t3: # OCJENE
+        with t3: # OCJENE (Nepromijenjeno)
             pj, pk = izracunaj_prosjeke()
             if pj:
                 st.subheader("📊 Popularnost jela")
@@ -152,9 +165,22 @@ else:
                     c_html += f'<div class="chef-card"><div style="color:white; font-weight:bold;">{ime}</div><div class="chef-rating">{oc} ⭐</div></div>'
                 st.markdown(c_html + '</div>', unsafe_allow_html=True)
 
-        with t4: # RESET
-            if st.button("🚀 ROTIRAJ SEDMICE", use_container_width=True):
-                df_n = ucitaj_sheet("Meni_Naredni")
-                if not df_n.empty:
-                    conn.update(spreadsheet=spreadsheet_url, worksheet="Meni_Trenutni", data=df_n)
-                    st.success("Rotirano!"); time.sleep(1); st.rerun()
+        with t4: # --- NOVI IZGLED ZA RESET ---
+            st.markdown(f"""
+                <div class="reset-card">
+                    <div class="reset-icon">🚀</div>
+                    <div class="reset-warning">ROTIRANJE SEDMICE</div>
+                    <div class="reset-desc">
+                        Ova akcija će postaviti 'Naredni meni' kao 'Trenutni' 
+                        i pripremiti sistem za nove narudžbe.
+                    </div>
+                </div>
+            """, unsafe_allow_html=True)
+            
+            if st.button("POTVRDI I ROTIRAJ ODMAH", use_container_width=True, type="primary"):
+                with st.spinner("Rotiram sedmice..."):
+                    df_n = ucitaj_sheet("Meni_Naredni")
+                    if not df_n.empty:
+                        conn.update(spreadsheet=spreadsheet_url, worksheet="Meni_Trenutni", data=df_n)
+                        st.balloons()
+                        st.success("Uspješno rotirano!"); time.sleep(2); st.rerun()
