@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 import re
 import time
 
-# --- 1. STILIZACIJA (Tvoj originalni stil - NE DIRAM) ---
+# --- 1. STILIZACIJA (Zadržan stil sa tvojih slika) ---
 st.set_page_config(page_title="Catering System", layout="centered")
 
 st.markdown("""
@@ -30,22 +30,14 @@ st.markdown("""
 
     .chef-container { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 15px; margin-top: 20px; }
     .chef-card { background: linear-gradient(145deg, #1A1C23, #11141C); border: 1px solid #333; border-radius: 20px; padding: 20px; text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.3); border-bottom: 3px solid #FFD700; }
-    .chef-avatar { background: #2D323E; width: 50px; height: 50px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 10px; font-size: 1.5rem; border: 2px solid #333; }
     .chef-name { color: white; font-size: 1rem; font-weight: bold; margin-bottom: 5px; }
     .chef-rating { color: #FFD700; font-size: 1.3rem; font-weight: 800; text-shadow: 0 0 10px rgba(255, 215, 0, 0.4); }
 
     .stDownloadButton button { background: linear-gradient(135deg, #E24A4A 0%, #8B0000 100%) !important; color: white !important; border-radius: 10px !important; border: none !important; font-weight: bold !important; padding: 12px !important; width: 100%; text-transform: uppercase; margin-top: 10px; }
     .kuhinja-box { background-color: #161922; border-radius: 15px; padding: 20px; border-left: 5px solid #E24A4A; margin-bottom: 20px; color: white; }
-    .smjena-header-text { font-size: 1.4rem; font-weight: bold; margin-bottom: 10px; }
     .jelo-title { background-color: #1A1C23; color: #E24A4A; padding: 10px; border-radius: 5px; font-weight: bold; margin-top: 10px; }
     .row-firma { display: flex; justify-content: space-between; padding: 8px 10px; border-bottom: 1px solid #222; font-size: 0.9rem; }
     .jelo-ukupno { text-align: right; color: #00FF00; font-weight: bold; padding: 10px; }
-
-    .info-container { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 15px; }
-    .info-card { flex: 1; padding: 10px; border-radius: 8px; text-align: center; color: white; font-weight: bold; font-size: 0.8rem; }
-    .blue-card { background-color: #1e3a5f; border: 1px solid #3b82f6; }
-    .yellow-card { background-color: #3e3e10; border: 1px solid #ca8a04; }
-    .green-card { background-color: #143e2a; border: 1px solid #16a34a; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -87,7 +79,6 @@ if not st.session_state["logged_in"]:
             st.session_state["logged_in"], st.session_state["user"] = True, u
             st.rerun()
 else:
-    # --- 4. ADMIN PANEL ---
     if st.session_state["user"] == "admin":
         st.markdown('<div class="admin-title">👨‍🍳 Admin Panel</div>', unsafe_allow_html=True)
         t1, t2, t3, t4 = st.tabs(["📊 Kuhinja", "📝 Meni", "⭐ Ocjene", "🔄 Reset"])
@@ -114,19 +105,40 @@ else:
             
             if not df_nar.empty:
                 dan_data = df_nar[df_nar['Dan'] == f"Ova-{dan_sel}"]
-                if st.download_button("📥 PREUZMI LISTU ZA ŠTAMPU", data="LISTA", file_name=f"Kuhinja_{dan_sel}.html", use_container_width=True): pass
+                st.download_button("📥 PREUZMI LISTU ZA ŠTAMPU", data="LISTA", file_name=f"Kuhinja_{dan_sel}.html", use_container_width=True)
                 for smj in ["I", "II", "III"]:
                     smj_d = dan_data[dan_data['Smjena'] == smj]
                     if not smj_d.empty:
-                        h_box = f'<div class="kuhinja-box"><div class="smjena-header-text">🕒 SMJENA {smj}</div>'
+                        h_box = f'<div class="kuhinja-box"><b>🕒 SMJENA {smj}</b>'
                         for jelo, j_d in smj_d.groupby("Jelo"):
                             h_box += f'<div class="jelo-title">{jelo}</div>'
                             for _, r in j_d.iterrows(): h_box += f'<div class="row-firma"><span>🏢 {r["Firma"]}</span><b>{int(r["Kolicina"])} kom</b></div>'
                             h_box += f'<div class="jelo-ukupno">UKUPNO: {int(j_d["Kolicina"].sum())}</div>'
                         st.markdown(h_box + '</div>', unsafe_allow_html=True)
 
-        with t2: # MENI
-            st.markdown("#### Ovdje možete ručno mijenjati jela u Google Tabeli.")
+        with t2: # --- TAB MENI (SAD RADI) ---
+            od_m = st.radio("Uredi:", ["Meni_Trenutni", "Meni_Naredni"], horizontal=True)
+            df_m = ucitaj_sheet(od_m)
+            with st.form(f"f_{od_m}"):
+                c1, c2, c3 = st.columns(3)
+                v_s = df_m[df_m['Dan']=='Sedmica']['Jelo'].values[0] if not df_m.empty and len(df_m[df_m['Dan']=='Sedmica'])>0 else ""
+                v_r = df_m[df_m['Dan']=='Rok']['Jelo'].values[0] if not df_m.empty and len(df_m[df_m['Dan']=='Rok'])>0 else "16:00"
+                v_k = df_m[df_m['Dan']=='Kuvar']['Jelo'].values[0] if not df_m.empty and len(df_m[df_m['Dan']=='Kuvar'])>0 else ""
+                n_s = c1.text_input("Period:", v_s); n_r = c2.text_input("Rok:", v_r); n_k = c3.text_input("Kuvar:", v_k)
+                
+                novi = [{"Dan": "Sedmica", "Jelo": n_s}, {"Dan": "Rok", "Jelo": n_r}, {"Dan": "Kuvar", "Jelo": n_k}]
+                for d in dani_std:
+                    st.markdown(f"**{d}**")
+                    p_jela = df_m[df_m['Dan']==d]['Jelo'].tolist() if not df_m.empty else []
+                    col1, col2, col3 = st.columns(3)
+                    for i, col in enumerate([col1, col2, col3]):
+                        stara = p_jela[i] if i < len(p_jela) else ""
+                        un = col.text_input(f"{d} {i+1}", stara, key=f"{od_m}{d}{i}")
+                        if un: novi.append({"Dan": d, "Jelo": un})
+                
+                if st.form_submit_button("💾 SAČUVAJ"):
+                    conn.update(spreadsheet=spreadsheet_url, worksheet=od_m, data=pd.DataFrame(novi))
+                    st.success("Sačuvano!"); time.sleep(1); st.rerun()
 
         with t3: # OCJENE
             pj, pk = izracunaj_prosjeke()
@@ -137,7 +149,7 @@ else:
                 st.markdown("### 👨‍🍳 Naši Kuvari")
                 c_html = '<div class="chef-container">'
                 for ime, oc in pk.items():
-                    c_html += f'<div class="chef-card"><div class="chef-avatar">👨‍🍳</div><div class="chef-name">{ime}</div><div class="chef-rating">{oc} ⭐</div></div>'
+                    c_html += f'<div class="chef-card"><div style="color:white; font-weight:bold;">{ime}</div><div class="chef-rating">{oc} ⭐</div></div>'
                 st.markdown(c_html + '</div>', unsafe_allow_html=True)
 
         with t4: # RESET
@@ -146,8 +158,3 @@ else:
                 if not df_n.empty:
                     conn.update(spreadsheet=spreadsheet_url, worksheet="Meni_Trenutni", data=df_n)
                     st.success("Rotirano!"); time.sleep(1); st.rerun()
-
-    # --- 5. KLIJENT PANEL (NE DIRAM) ---
-    else:
-        st.title(f"🍴 {st.session_state['user']}")
-        # (Logika za klijente ostaje ista...)
