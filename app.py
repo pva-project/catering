@@ -1,11 +1,11 @@
 import streamlit as st
 import pandas as pd
 from streamlit_gsheets import GSheetsConnection
-from datetime import datetime
+from datetime import datetime, timedelta
 import re
 import time
 
-# --- 1. STILIZACIJA (Originalni dizajn) ---
+# --- 1. STILIZACIJA ---
 st.set_page_config(page_title="Catering System", layout="centered")
 
 st.markdown("""
@@ -89,9 +89,9 @@ def izracunaj_prosjeke():
 def izvadi_sat_iz_roka(rok_tekst):
     try:
         brojevi = re.findall(r'\d+', str(rok_tekst))
-        return int(brojevi[0]) if brojevi else 14
+        return int(brojevi[0]) if brojevi else 16
     except:
-        return 14
+        return 16
 
 # --- 3. LOGIN SISTEM ---
 if "logged_in" not in st.session_state: st.session_state["logged_in"] = False
@@ -110,7 +110,7 @@ else:
         st.title("👨‍🍳 Admin Upravljanje")
         t1, t2, t3, t4 = st.tabs(["📊 Kuhinja", "📝 Meni", "⭐ Ocjene", "🔄 Reset"])
         
-        with t1: # KUHINJA PREGLED
+        with t1: # KUHINJA
             df_nar = ucitaj_sheet("Sheet1")
             dan_sel = st.selectbox("Izaberi dan:", dani_std)
             if not df_nar.empty:
@@ -128,7 +128,7 @@ else:
                         html += '</div>'
                         st.markdown(html, unsafe_allow_html=True)
 
-        with t2: # EDIT MENIJA
+        with t2: # EDIT MENI
             od_m = st.radio("Uredi:", ["Meni_Trenutni", "Meni_Naredni"], horizontal=True)
             df_m = ucitaj_sheet(od_m)
             with st.form(f"f_{od_m}"):
@@ -148,12 +148,11 @@ else:
                         stara = p_jela[i] if i < len(p_jela) else ""
                         un = p_cols[i].text_input(f"Jelo {i+1}", stara, key=f"e_{od_m}_{d}_{i}")
                         if un: novi.append({"Dan":d, "Jelo":un})
-                
                 if st.form_submit_button("SAČUVAJ"):
                     conn.update(spreadsheet=spreadsheet_url, worksheet=od_m, data=pd.DataFrame(novi))
                     st.success("Sačuvano!"); time.sleep(1); st.rerun()
 
-        with t3: # OCJENE
+        with t3: # ADMIN OCJENE
             df_o = ucitaj_sheet("Ocjene")
             pj, pk = izracunaj_prosjeke()
             if pk:
@@ -162,7 +161,7 @@ else:
             st.divider()
             st.dataframe(df_o, use_container_width=True, hide_index=True)
 
-        with t4: # ROTACIJA SEDMICA
+        with t4: # ROTIRAJ
             if st.button("🚀 ROTIRAJ SEDMICE"):
                 df_n = ucitaj_sheet("Meni_Naredni")
                 if not df_n.empty:
@@ -181,20 +180,20 @@ else:
             rok_tekst = df_m[df_m['Dan']=='Rok']['Jelo'].values[0] if not df_m.empty else "16:00"
             k = df_m[df_m['Dan']=='Kuvar']['Jelo'].values[0] if not df_m.empty else "/"
             
-            # --- LOGIKA TAJMERA (RESETOVANJE U PONOĆ) ---
+            # --- PRECIZNA LOGIKA VREMENA (UTC+2) ---
             sat_limita = izvadi_sat_iz_roka(rok_tekst)
-            sada = datetime.now()
+            sada = datetime.now() + timedelta(hours=2) 
             danas_idx = sada.weekday()
             trenutni_sat = sada.hour
             
             if lock:
-                # Ako je sat trenutno manji od roka (npr. 02:00h ujutro < 16:00h)
                 if trenutni_sat < sat_limita:
-                    ostalo_sati = sat_limita - trenutni_sat - 1
-                    ostalo_minuta = 60 - sada.minute
-                    st.info(f"⏳ **Narudžbe za SUTRA su otvorene još: {ostalo_sati}h {ostalo_minuta}min**")
+                    rok_vrijeme = sada.replace(hour=sat_limita, minute=0, second=0, microsecond=0)
+                    razlika = rok_vrijeme - sada
+                    pre_sati = razlika.seconds // 3600
+                    pre_min = (razlika.seconds % 3600) // 60
+                    st.info(f"⏳ **Narudžbe za SUTRA su otvorene još: {pre_sati}h {pre_min}min**")
                 else:
-                    # Samo nakon što sat pređe rok (npr. 16:01h), prikazuje grešku do kraja dana
                     st.error(f"🔒 **Rok ({rok_tekst}) za sutrašnju narudžbu je istekao!**")
 
             st.markdown(f'<div class="info-container"><div class="info-card blue-card">📅 {s}</div><div class="info-card yellow-card">⏰ ROK: {rok_tekst}</div><div class="info-card green-card">👨‍🍳 {k}</div></div>', unsafe_allow_html=True)
@@ -203,18 +202,15 @@ else:
                 unose = []
                 for d in dani_std:
                     idx = dani_std.index(d)
-                    
                     if not lock:
                         dis = False
                     else:
                         is_proslost = danas_idx > idx
                         is_danas = danas_idx == idx
                         is_sutra = (danas_idx + 1 == idx)
-                        
                         if is_proslost or is_danas:
                             dis = True
                         elif is_sutra:
-                            # Sutrašnji dan se zaključava samo ako je danas prošao sat limita
                             dis = (trenutni_sat >= sat_limita)
                         else:
                             dis = False
@@ -245,15 +241,12 @@ else:
 
         with t_o: render_c("Meni_Trenutni", "Ova", True)
         with t_n: render_c("Meni_Naredni", "Naredna", False)
-        
-        with t_h: # ISTORIJA
+        with t_h:
             df_sve = ucitaj_sheet("Sheet1")
             if not df_sve.empty:
                 moje = df_sve[df_sve['Firma'] == st.session_state['user']]
                 st.dataframe(moje, use_container_width=True, hide_index=True)
-            else: st.info("Nema podataka o istoriji.")
-
-        with t_oc: # OCJENJIVANJE
+        with t_oc:
             df_m_t = ucitaj_sheet("Meni_Trenutni")
             k_t = df_m_t[df_m_t['Dan'] == 'Kuvar']['Jelo'].values[0] if not df_m_t.empty else "N/A"
             jela = df_m_t[df_m_t['Dan'].isin(dani_std)]['Jelo'].unique().tolist() if not df_m_t.empty else []
