@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 import re
 import time
 
-# --- 1. STILIZACIJA (Tvoj originalni stil sa slika) ---
+# --- 1. STILIZACIJA (Kombinacija tvog stila i traženih Ocjena) ---
 st.set_page_config(page_title="Catering System", layout="centered")
 
 st.markdown("""
@@ -34,12 +34,26 @@ st.markdown("""
     .row-firma { display: flex; justify-content: space-between; padding: 8px 10px; border-bottom: 1px solid #222; font-size: 0.9rem; }
     .jelo-ukupno { text-align: right; color: #00FF00; font-weight: bold; padding: 10px; }
 
-    /* Ocjene i Kuvari */
+    /* --- CHEF CARDS (Ispravljeno: Sličica umjesto teksta) --- */
     .chef-container { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 15px; margin-top: 20px; }
     .chef-card { background: linear-gradient(145deg, #1A1C23, #11141C); border: 1px solid #333; border-radius: 20px; padding: 20px; text-align: center; border-bottom: 3px solid #FFD700; }
-    .chef-title { color: #FFD700; font-size: 0.7rem; text-transform: uppercase; margin-bottom: 5px; font-weight: bold; }
-    .chef-name { color: white; font-size: 1.1rem; font-weight: bold; }
-    .chef-rating { color: #FFD700; font-size: 1.3rem; font-weight: 800; }
+    
+    /* Krug oko sličice */
+    .chef-avatar-circle {
+        background: #2D323E;
+        width: 60px;
+        height: 60px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto 10px; /* Centrirano horizontalno */
+        font-size: 2rem; /* Veličina emojija */
+        border: 2px solid #333;
+    }
+    
+    .chef-name { color: white; font-size: 1.1rem; font-weight: bold; margin-bottom: 5px; }
+    .chef-rating { color: #FFD700; font-size: 1.5rem; font-weight: 800; text-shadow: 0 0 10px rgba(255, 215, 0, 0.4); }
 
     /* Tabela komentara */
     .komentar-table { width: 100%; border-collapse: collapse; margin-top: 20px; color: white; }
@@ -85,7 +99,7 @@ else:
         st.markdown('<div class="admin-title">👨‍🍳 Admin Upravljanje</div>', unsafe_allow_html=True)
         t1, t2, t3, t4 = st.tabs(["📊 Kuhinja", "📝 Meni", "⭐ Ocjene", "🔄 Reset"])
 
-        with t1: # KUHINJA
+        with t1: # KUHINJA (Nepromijenjeno)
             df_nar = ucitaj_sheet("Sheet1")
             df_meni_t = ucitaj_sheet("Meni_Trenutni")
             rok_tekst = df_meni_t[df_meni_t['Dan']=='Rok']['Jelo'].values[0] if not df_meni_t.empty else "16:00"
@@ -117,7 +131,7 @@ else:
                             h_box += f'<div class="jelo-ukupno">UKUPNO: {int(j_d["Kolicina"].sum())}</div>'
                         st.markdown(h_box + '</div>', unsafe_allow_html=True)
 
-        with t2: # MENI (POLJA ZA UNOS)
+        with t2: # MENI (Ispravljena polja za unos)
             od_m = st.radio("Uredi:", ["Meni_Trenutni", "Meni_Naredni"], horizontal=True)
             df_m = ucitaj_sheet(od_m)
             with st.form(f"f_{od_m}"):
@@ -139,7 +153,7 @@ else:
                     conn.update(spreadsheet=spreadsheet_url, worksheet=od_m, data=pd.DataFrame(novi))
                     st.success("Sačuvano!"); time.sleep(1); st.rerun()
 
-        with t3: # OCJENE (TITULE + TABELA)
+        with t3: # --- TAB OCJENE (Sličica + Tabela) ---
             df_o = ucitaj_sheet("Ocjene")
             if not df_o.empty:
                 df_o['Numericka'] = df_o['Ocjena'].map(mapa_ocjena)
@@ -147,12 +161,22 @@ else:
                 pj = df_o.groupby('Jelo')['Numericka'].mean().round(1).sort_values(ascending=False)
                 st.bar_chart(pj)
                 
-                st.markdown("### 👨‍🍳 Naši Kuvari")
+                # Dodati Hit i Loše (zelena/crvena traka)
+                cb, cw = st.columns(2)
+                cb.success(f"🏆 HIT: {pj.index[0]}")
+                cw.error(f"⚠️ LOŠE: {pj.index[-1]}")
+                st.divider()
+
+                st.markdown("### 👩‍🍳 Naši Kuvari")
                 pk = df_o.groupby('Kuvar')['Numericka'].mean().round(1).to_dict()
                 c_html = '<div class="chef-container">'
                 for ime, oc in pk.items():
-                    titula = "Glavni Kuvar" if oc >= 4 else "Chef de Cuisine"
-                    c_html += f'<div class="chef-card"><div class="chef-title">{titula}</div><div class="chef-name">{ime}</div><div class="chef-rating">{oc} ⭐</div></div>'
+                    c_html += f'''
+                    <div class="chef-card">
+                        <div class="chef-avatar-circle">👩‍🍳</div>
+                        <div class="chef-name">{ime}</div>
+                        <div class="chef-rating">{oc} ⭐</div>
+                    </div>'''
                 st.markdown(c_html + '</div>', unsafe_allow_html=True)
 
                 st.markdown("### 💬 Komentari i Ocjene")
@@ -162,7 +186,7 @@ else:
                     t_html += f'<tr><td>{r["Jelo"]}</td><td><span class="badge">{n} ★</span></td><td>{r.get("Komentar","")}</td></tr>'
                 st.markdown(t_html + '</table>', unsafe_allow_html=True)
 
-        with t4: # RESET
+        with t4: # RESET (Moderni izgled)
             st.markdown('<div class="reset-card">🚀 <h3>Rotiranje sedmice</h3><p style="color:#888;">Naredni meni postaje trenutni.</p></div>', unsafe_allow_html=True)
             if st.button("POTVRDI ROTACIJU", use_container_width=True, type="primary"):
                 df_n = ucitaj_sheet("Meni_Naredni")
