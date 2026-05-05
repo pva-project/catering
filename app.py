@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 import re
 import time
 
-# --- 1. STILIZACIJA (Kombinacija tvog stila i traženih Ocjena) ---
+# --- 1. STILIZACIJA ---
 st.set_page_config(page_title="Catering System", layout="centered")
 
 st.markdown("""
@@ -17,7 +17,7 @@ st.markdown("""
 
     .admin-title { font-size: 1.8rem; font-weight: 800; color: white; margin-bottom: 20px; text-align: center; }
     
-    /* Kuhinja i Statusi */
+    /* Statusi i kartice */
     .status-container { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin: 15px 0; }
     .status-card { background: #1A1C23; border: 1px solid #333; border-radius: 12px; padding: 12px; text-align: center; }
     .dot { height: 8px; width: 8px; border-radius: 50%; display: inline-block; margin-right: 5px; }
@@ -34,26 +34,12 @@ st.markdown("""
     .row-firma { display: flex; justify-content: space-between; padding: 8px 10px; border-bottom: 1px solid #222; font-size: 0.9rem; }
     .jelo-ukupno { text-align: right; color: #00FF00; font-weight: bold; padding: 10px; }
 
-    /* --- CHEF CARDS (Ispravljeno: Sličica umjesto teksta) --- */
+    /* Kuvar kartice */
     .chef-container { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 15px; margin-top: 20px; }
     .chef-card { background: linear-gradient(145deg, #1A1C23, #11141C); border: 1px solid #333; border-radius: 20px; padding: 20px; text-align: center; border-bottom: 3px solid #FFD700; }
-    
-    /* Krug oko sličice */
-    .chef-avatar-circle {
-        background: #2D323E;
-        width: 60px;
-        height: 60px;
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        margin: 0 auto 10px; /* Centrirano horizontalno */
-        font-size: 2rem; /* Veličina emojija */
-        border: 2px solid #333;
-    }
-    
+    .chef-avatar-circle { background: #2D323E; width: 60px; height: 60px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 10px; font-size: 2rem; border: 2px solid #333; }
     .chef-name { color: white; font-size: 1.1rem; font-weight: bold; margin-bottom: 5px; }
-    .chef-rating { color: #FFD700; font-size: 1.5rem; font-weight: 800; text-shadow: 0 0 10px rgba(255, 215, 0, 0.4); }
+    .chef-rating { color: #FFD700; font-size: 1.5rem; font-weight: 800; }
 
     /* Tabela komentara */
     .komentar-table { width: 100%; border-collapse: collapse; margin-top: 20px; color: white; }
@@ -66,7 +52,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 2. LOGIKA POVEZIVANJA ---
+# --- 2. POMOĆNE FUNKCIJE ---
 spreadsheet_url = st.secrets["connections"]["gsheets"]["spreadsheet"]
 conn = st.connection("gsheets", type=GSheetsConnection)
 dani_std = ["Ponedjeljak", "Utorak", "Srijeda", "Četvrtak", "Petak", "Subota"]
@@ -82,7 +68,7 @@ def izvadi_sat(tekst):
     brojevi = re.findall(r'\d+', str(tekst))
     return int(brojevi[0]) if brojevi else 16
 
-# --- 3. LOGIN ---
+# --- 3. LOGIN SISTEM ---
 if "logged_in" not in st.session_state: st.session_state["logged_in"] = False
 
 if not st.session_state["logged_in"]:
@@ -99,7 +85,7 @@ else:
         st.markdown('<div class="admin-title">👨‍🍳 Admin Upravljanje</div>', unsafe_allow_html=True)
         t1, t2, t3, t4 = st.tabs(["📊 Kuhinja", "📝 Meni", "⭐ Ocjene", "🔄 Reset"])
 
-        with t1: # KUHINJA (Nepromijenjeno)
+        with t1: # KUHINJA
             df_nar = ucitaj_sheet("Sheet1")
             df_meni_t = ucitaj_sheet("Meni_Trenutni")
             rok_tekst = df_meni_t[df_meni_t['Dan']=='Rok']['Jelo'].values[0] if not df_meni_t.empty else "16:00"
@@ -131,7 +117,7 @@ else:
                             h_box += f'<div class="jelo-ukupno">UKUPNO: {int(j_d["Kolicina"].sum())}</div>'
                         st.markdown(h_box + '</div>', unsafe_allow_html=True)
 
-        with t2: # MENI (Ispravljena polja za unos)
+        with t2: # MENI
             od_m = st.radio("Uredi:", ["Meni_Trenutni", "Meni_Naredni"], horizontal=True)
             df_m = ucitaj_sheet(od_m)
             with st.form(f"f_{od_m}"):
@@ -153,32 +139,22 @@ else:
                     conn.update(spreadsheet=spreadsheet_url, worksheet=od_m, data=pd.DataFrame(novi))
                     st.success("Sačuvano!"); time.sleep(1); st.rerun()
 
-        with t3: # --- TAB OCJENE (Sličica + Tabela) ---
+        with t3: # OCJENE
             df_o = ucitaj_sheet("Ocjene")
             if not df_o.empty:
                 df_o['Numericka'] = df_o['Ocjena'].map(mapa_ocjena)
                 st.markdown("### 📊 Popularnost jela")
                 pj = df_o.groupby('Jelo')['Numericka'].mean().round(1).sort_values(ascending=False)
                 st.bar_chart(pj)
-                
-                # Dodati Hit i Loše (zelena/crvena traka)
-                cb, cw = st.columns(2)
-                cb.success(f"🏆 HIT: {pj.index[0]}")
-                cw.error(f"⚠️ LOŠE: {pj.index[-1]}")
+                st.success(f"🏆 HIT: {pj.index[0]}")
+                st.error(f"⚠️ LOŠE: {pj.index[-1]}")
                 st.divider()
-
                 st.markdown("### 👩‍🍳 Naši Kuvari")
                 pk = df_o.groupby('Kuvar')['Numericka'].mean().round(1).to_dict()
                 c_html = '<div class="chef-container">'
                 for ime, oc in pk.items():
-                    c_html += f'''
-                    <div class="chef-card">
-                        <div class="chef-avatar-circle">👩‍🍳</div>
-                        <div class="chef-name">{ime}</div>
-                        <div class="chef-rating">{oc} ⭐</div>
-                    </div>'''
+                    c_html += f'<div class="chef-card"><div class="chef-avatar-circle">👩‍🍳</div><div class="chef-name">{ime}</div><div class="chef-rating">{oc} ⭐</div></div>'
                 st.markdown(c_html + '</div>', unsafe_allow_html=True)
-
                 st.markdown("### 💬 Komentari i Ocjene")
                 t_html = '<table class="komentar-table"><tr><th>Jelo</th><th>Ocjena</th><th>Komentar</th></tr>'
                 for _, r in df_o.tail(10).iterrows():
@@ -186,10 +162,51 @@ else:
                     t_html += f'<tr><td>{r["Jelo"]}</td><td><span class="badge">{n} ★</span></td><td>{r.get("Komentar","")}</td></tr>'
                 st.markdown(t_html + '</table>', unsafe_allow_html=True)
 
-        with t4: # RESET (Moderni izgled)
+        with t4: # RESET
             st.markdown('<div class="reset-card">🚀 <h3>Rotiranje sedmice</h3><p style="color:#888;">Naredni meni postaje trenutni.</p></div>', unsafe_allow_html=True)
             if st.button("POTVRDI ROTACIJU", use_container_width=True, type="primary"):
                 df_n = ucitaj_sheet("Meni_Naredni")
                 if not df_n.empty:
                     conn.update(spreadsheet=spreadsheet_url, worksheet="Meni_Trenutni", data=df_n)
                     st.success("Sistem rotiran!"); time.sleep(1); st.rerun()
+
+    # --- 5. KLIJENT PANEL (POVRATAK FUNKCIONALNOSTI) ---
+    else:
+        f_user = st.session_state["user"]
+        st.markdown(f"## 🍴 Dobrodošli, {f_user}")
+        
+        meni_t = ucitaj_sheet("Meni_Trenutni")
+        if meni_t.empty:
+            st.warning("Meni trenutno nije dostupan.")
+        else:
+            period = meni_t[meni_t['Dan']=='Sedmica']['Jelo'].values[0]
+            st.info(f"📅 Period: {period}")
+            
+            izbor_dana = st.selectbox("Izaberi dan za narudžbu:", dani_std)
+            jela_za_dan = meni_t[meni_t['Dan'] == izbor_dana]['Jelo'].tolist()
+            
+            with st.form("narudzba_forma"):
+                st.markdown(f"### Meni za {izbor_dana}")
+                jelo = st.selectbox("Izaberi jelo:", jela_za_dan)
+                smjena = st.radio("Smjena:", ["I", "II", "III"], horizontal=True)
+                kolicina = st.number_input("Količina:", min_value=1, value=1, step=1)
+                
+                if st.form_submit_button("🚀 POŠALJI NARUDŽBU"):
+                    nova_n = pd.DataFrame([{
+                        "Firma": f_user,
+                        "Dan": f"Ova-{izbor_dana}",
+                        "Smjena": smjena,
+                        "Jelo": jelo,
+                        "Kolicina": kolicina,
+                        "Vrijeme": datetime.now().strftime("%d.%m %H:%M")
+                    }])
+                    stari_n = ucitaj_sheet("Sheet1")
+                    final_df = pd.concat([stari_n, nova_n], ignore_index=True)
+                    conn.update(spreadsheet=spreadsheet_url, worksheet="Sheet1", data=final_df)
+                    st.success("Narudžba uspješno poslana!")
+                    time.sleep(1)
+                    st.rerun()
+        
+        if st.button("🚪 Odjavi se"):
+            st.session_state["logged_in"] = False
+            st.rerun()
