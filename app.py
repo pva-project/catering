@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 import re
 import time
 
-# --- 1. STILIZACIJA ---
+# --- 1. STILIZACIJA (Nepromijenjeno) ---
 st.set_page_config(page_title="Catering System", layout="centered")
 
 st.markdown("""
@@ -110,9 +110,15 @@ else:
         st.title("👨‍🍳 Admin Upravljanje")
         t1, t2, t3, t4 = st.tabs(["📊 Kuhinja", "📝 Meni", "⭐ Ocjene", "🔄 Reset"])
         
-        with t1: # KUHINJA
+        with t1: # KUHINJA (DODATO DUGME ZA IZVJEŠTAJ)
             df_nar = ucitaj_sheet("Sheet1")
             dan_sel = st.selectbox("Izaberi dan:", dani_std)
+            
+            # Dugme za generisanje pregleda za štampu
+            if st.button("📄 Generiši listu za kuhinju (Štampa)"):
+                st.info(f"Pripremam izvještaj za {dan_sel}...")
+                # Ovdje se može dodati logika za PDF download
+            
             if not df_nar.empty:
                 dan_data = df_nar[df_nar['Dan'] == f"Ova-{dan_sel}"]
                 for smj in ["I", "II", "III"]:
@@ -128,7 +134,7 @@ else:
                         html += '</div>'
                         st.markdown(html, unsafe_allow_html=True)
 
-        with t2: # EDIT MENI
+        with t2: # EDIT MENI (Nepromijenjeno)
             od_m = st.radio("Uredi:", ["Meni_Trenutni", "Meni_Naredni"], horizontal=True)
             df_m = ucitaj_sheet(od_m)
             with st.form(f"f_{od_m}"):
@@ -152,7 +158,7 @@ else:
                     conn.update(spreadsheet=spreadsheet_url, worksheet=od_m, data=pd.DataFrame(novi))
                     st.success("Sačuvano!"); time.sleep(1); st.rerun()
 
-        with t3: # ADMIN OCJENE
+        with t3: # ADMIN OCJENE (Nepromijenjeno)
             df_o = ucitaj_sheet("Ocjene")
             pj, pk = izracunaj_prosjeke()
             if pk:
@@ -161,7 +167,7 @@ else:
             st.divider()
             st.dataframe(df_o, use_container_width=True, hide_index=True)
 
-        with t4: # ROTIRAJ
+        with t4: # ROTIRAJ (Nepromijenjeno)
             if st.button("🚀 ROTIRAJ SEDMICE"):
                 df_n = ucitaj_sheet("Meni_Naredni")
                 if not df_n.empty:
@@ -180,7 +186,7 @@ else:
             rok_tekst = df_m[df_m['Dan']=='Rok']['Jelo'].values[0] if not df_m.empty else "16:00"
             k = df_m[df_m['Dan']=='Kuvar']['Jelo'].values[0] if not df_m.empty else "/"
             
-            # --- PRECIZNA LOGIKA VREMENA (UTC+2) ---
+            # --- LOGIKA TAJMERA (UTC+2) ---
             sat_limita = izvadi_sat_iz_roka(rok_tekst)
             sada = datetime.now() + timedelta(hours=2) 
             danas_idx = sada.weekday()
@@ -189,9 +195,9 @@ else:
             if lock:
                 if trenutni_sat < sat_limita:
                     rok_vrijeme = sada.replace(hour=sat_limita, minute=0, second=0, microsecond=0)
-                    razlika = rok_vrijeme - sada
-                    pre_sati = razlika.seconds // 3600
-                    pre_min = (razlika.seconds % 3600) // 60
+                    razlika = (rok_vrijeme - sada).seconds
+                    pre_sati = razlika // 3600
+                    pre_min = (razlika % 3600) // 60
                     st.info(f"⏳ **Narudžbe za SUTRA su otvorene još: {pre_sati}h {pre_min}min**")
                 else:
                     st.error(f"🔒 **Rok ({rok_tekst}) za sutrašnju narudžbu je istekao!**")
