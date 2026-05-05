@@ -59,6 +59,13 @@ st.markdown("""
         padding: 10px 15px;
     }
     
+    .status-badge {
+        padding: 2px 8px;
+        border-radius: 12px;
+        font-size: 0.8rem;
+        margin-left: 10px;
+    }
+    
     .info-container { display: flex; justify-content: space-between; gap: 10px; margin-bottom: 20px; }
     .info-card { flex: 1; padding: 15px; border-radius: 10px; text-align: center; color: white; font-weight: bold; }
     .blue-card { background-color: #1e3a5f; border: 1px solid #3b82f6; }
@@ -71,6 +78,8 @@ st.markdown("""
 spreadsheet_url = st.secrets["connections"]["gsheets"]["spreadsheet"]
 conn = st.connection("gsheets", type=GSheetsConnection)
 dani_std = ["Ponedjeljak", "Utorak", "Srijeda", "Četvrtak", "Petak", "Subota"]
+# Definišemo firme (bez admina) za status traku
+sve_firme = ["Lattonedil", "PVA Group", "Esintec", "ActivBH"]
 mapa_ocjena = {"Loše": 1, "Može bolje": 2, "Dobro": 3, "Odlično": 4, "Savršeno": 5}
 users = {"admin": "admin123", "Lattonedil": "lattonedil321", "PVA Group": "pvagroup321", "Esintec": "esintec321", "ActivBH": "activbh321"}
 
@@ -82,7 +91,7 @@ def izracunaj_prosjeke():
     df_o = ucitaj_sheet("Ocjene")
     if df_o.empty or "Ocjena" not in df_o.columns: return {}, {}
     df_o['Numericka'] = df_o['Ocjena'].map(mapa_ocjena)
-    pj = df_o.groupby('Jelo')['Numericka'].mean().round(1).to_dict()
+    pj = df_o.groupby('Jelo')['Numericka'].mean().round(1).sort_values(ascending=False).to_dict()
     pk = df_o.groupby('Kuvar')['Numericka'].mean().round(1).to_dict() if "Kuvar" in df_o.columns else {}
     return pj, pk
 
@@ -110,63 +119,62 @@ else:
         st.title("👨‍🍳 Admin Upravljanje")
         t1, t2, t3, t4 = st.tabs(["📊 Kuhinja", "📝 Meni", "⭐ Ocjene", "🔄 Reset"])
         
-        with t1:
+        with t1: # KUHINJA + STATUSI
             df_nar = ucitaj_sheet("Sheet1")
+            df_meni_t = ucitaj_sheet("Meni_Trenutni")
+            rok_tekst = df_meni_t[df_meni_t['Dan']=='Rok']['Jelo'].values[0] if not df_meni_t.empty else "16:00"
+            sat_limita = izvadi_sat_iz_roka(rok_tekst)
+            
             dan_sel = st.selectbox("Izaberi dan:", dani_std)
             
+            # --- STATUSI FIRMI (VIZUELNI PREGLED) ---
+            st.markdown("### 🕒 Statusi narudžbi za izabrani dan")
+            cols = st.columns(len(sve_firme))
+            sada = datetime.now() + timedelta(hours=2)
+            danas_idx = sada.weekday()
+            izabrani_idx = dani_std.index(dan_sel)
+            trenutni_sat = sada.hour
+            
+            for i, f in enumerate(sve_firme):
+                if not df_nar.empty:
+                    unio = not df_nar[(df_nar['Firma'] == f) & (df_nar['Dan'] == f"Ova-{dan_sel}")].empty
+                else:
+                    unio = False
+                
+                # Logika za boju
+                prošao_rok = (izabrani_idx == danas_idx + 1 and trenutni_sat >= sat_limita) or (izabrani_idx <= danas_idx)
+                
+                if unio:
+                    status_text = "🟢 Naručeno"
+                elif prošao_rok:
+                    status_text = "🔴 Kasne"
+                else:
+                    status_text = "🟡 Na čekanju"
+                
+                cols[i].markdown(f"**{f}** \n{status_text}")
+            
+            st.divider()
+
             if not df_nar.empty:
                 dan_data = df_nar[df_nar['Dan'] == f"Ova-{dan_sel}"]
                 datum_str = (datetime.now() + timedelta(hours=2)).strftime('%d.%m.%Y')
 
-                # --- GENERISANJE HTML-a ZA ŠTAMPU ---
-                html_izvjestaj = f"""
-                <html>
-                <head>
-                    <meta charset="utf-8">
-                    <style>
-                        body {{ font-family: 'Arial', sans-serif; padding: 20px; color: #222; }}
-                        .header {{ background: #E24A4A; color: white; padding: 20px; text-align: center; border-radius: 10px; margin-bottom: 20px; }}
-                        .card {{ border: 1px solid #ddd; margin-bottom: 25px; border-radius: 8px; overflow: hidden; }}
-                        .card-h {{ background: #1A1C23; color: white; padding: 12px; font-size: 16pt; font-weight: bold; }}
-                        table {{ width: 100%; border-collapse: collapse; }}
-                        th {{ background: #f2f2f2; text-align: left; padding: 12px; border-bottom: 2px solid #ddd; }}
-                        td {{ padding: 12px; border-bottom: 1px solid #eee; }}
-                        .jelo-row {{ background: #fff5f5; font-weight: bold; color: #E24A4A; }}
-                        .firma-row td {{ padding-left: 30px; color: #555; }}
-                        .total-row {{ background: #f9f9f9; text-align: right; padding: 12px; font-weight: bold; border-top: 2px solid #ddd; font-size: 13pt; }}
-                        @media print {{ .no-print {{ display: none; }} body {{ padding: 0; }} }}
-                    </style>
-                </head>
-                <body>
-                    <div class="header">
-                        <h1 style="margin:0;">LISTA ZA KUHINJU</h1>
-                        <p style="margin:5px 0 0 0; font-size: 14pt;">{dan_sel}, {datum_str}</p>
-                    </div>
-                """
+                # HTML ZA ŠTAMPU (Nepromijenjeno)
+                html_izvjestaj = f"<html><head><meta charset='utf-8'><style>body {{ font-family: Arial; padding: 20px; }} .header {{ background: #E24A4A; color: white; padding: 20px; text-align: center; border-radius: 10px; }} .card {{ border: 1px solid #ddd; margin-top: 20px; border-radius: 8px; overflow: hidden; }} .card-h {{ background: #1A1C23; color: white; padding: 12px; font-weight: bold; }} table {{ width: 100%; border-collapse: collapse; }} th {{ background: #f2f2f2; text-align: left; padding: 10px; }} td {{ padding: 10px; border-bottom: 1px solid #eee; }} .jelo-row {{ background: #fff5f5; font-weight: bold; color: #E24A4A; }} .total-row {{ background: #f9f9f9; text-align: right; padding: 10px; font-weight: bold; border-top: 2px solid #ddd; }}</style></head><body><div class='header'><h1>LISTA ZA KUHINJU</h1><p>{dan_sel}, {datum_str}</p></div>"
                 for smj in ["I", "II", "III"]:
                     smj_d = dan_data[dan_data['Smjena'] == smj]
                     if not smj_d.empty:
-                        html_izvjestaj += f'<div class="card"><div class="card-h">🕒 SMJENA {smj}</div>'
-                        html_izvjestaj += '<table><thead><tr><th>JELO / FIRMA</th><th style="text-align:right">KOLIČINA</th></tr></thead><tbody>'
+                        html_izvjestaj += f'<div class="card"><div class="card-h">🕒 SMJENA {smj}</div><table><thead><tr><th>JELO / FIRMA</th><th style="text-align:right">KOL.</th></tr></thead><tbody>'
                         for jelo, j_d in smj_d.groupby("Jelo"):
                             html_izvjestaj += f'<tr class="jelo-row"><td>🍴 {jelo}</td><td style="text-align:right">{int(j_d["Kolicina"].sum())} UKUPNO</td></tr>'
                             for _, r in j_d.iterrows():
-                                html_izvjestaj += f'<tr class="firma-row"><td>🏢 {r["Firma"]}</td><td style="text-align:right">{int(r["Kolicina"])} kom</td></tr>'
+                                html_izvjestaj += f'<tr><td style="padding-left:20px;">🏢 {r["Firma"]}</td><td style="text-align:right">{int(r["Kolicina"])} kom</td></tr>'
                         html_izvjestaj += f'</tbody></table><div class="total-row">UKUPNO SMJENA {smj}: {int(smj_d["Kolicina"].sum())} obroka</div></div>'
-                
                 html_izvjestaj += "</body></html>"
 
-                # DUGME ZA DOWNLOAD
-                st.download_button(
-                    label="📥 PREUZMI LISTU ZA ŠTAMPU",
-                    data=html_izvjestaj,
-                    file_name=f"Kuhinja_{dan_sel}.html",
-                    mime="text/html",
-                    use_container_width=True
-                )
+                st.download_button("📥 PREUZMI LISTU ZA ŠTAMPU", data=html_izvjestaj, file_name=f"Kuhinja_{dan_sel}.html", mime="text/html", use_container_width=True)
                 st.divider()
 
-                # Vizuelni prikaz u aplikaciji (dark mode stil)
                 for smj in ["I", "II", "III"]:
                     smj_d = dan_data[dan_data['Smjena'] == smj]
                     if not smj_d.empty:
@@ -204,23 +212,39 @@ else:
                     conn.update(spreadsheet=spreadsheet_url, worksheet=od_m, data=pd.DataFrame(novi))
                     st.success("Sačuvano!"); time.sleep(1); st.rerun()
 
-        with t3: # OCJENE
+        with t3: # OCJENE + SEMAFOR (DASHBOARD)
             df_o = ucitaj_sheet("Ocjene")
             pj, pk = izracunaj_prosjeke()
+            
+            # Semafor / Dashboard
+            st.subheader("📊 Semafor popularnosti jela")
+            if pj:
+                df_pj = pd.DataFrame(list(pj.items()), columns=['Jelo', 'Ocjena'])
+                st.bar_chart(df_pj.set_index('Jelo'))
+                
+                col_best, col_worst = st.columns(2)
+                best_jelo = df_pj.iloc[0]
+                worst_jelo = df_pj.iloc[-1]
+                col_best.success(f"🏆 HIT MJESECA: **{best_jelo['Jelo']}** ({best_jelo['Ocjena']} ⭐)")
+                col_worst.error(f"⚠️ NAJLOŠIJE: **{worst_jelo['Jelo']}** ({worst_jelo['Ocjena']} ⭐)")
+            
+            st.divider()
             if pk:
+                st.write("**👨‍🍳 Ocjene kuvara:**")
                 cols = st.columns(len(pk))
-                for i, (k, v) in enumerate(pk.items()): cols[i].metric(f"👨‍🍳 {k}", f"{v} ⭐")
+                for i, (k, v) in enumerate(pk.items()): cols[i].metric(f"{k}", f"{v} ⭐")
+            
             st.divider()
             st.dataframe(df_o, use_container_width=True, hide_index=True)
 
-        with t4: # ROTACIJA
+        with t4: # RESET
             if st.button("🚀 ROTIRAJ SEDMICE"):
                 df_n = ucitaj_sheet("Meni_Naredni")
                 if not df_n.empty:
                     conn.update(spreadsheet=spreadsheet_url, worksheet="Meni_Trenutni", data=df_n)
                     st.success("Rotirano!"); time.sleep(1); st.rerun()
 
-    # --- 5. KLIJENT PANEL ---
+    # --- 5. KLIJENT PANEL (Nepromijenjeno) ---
     else:
         st.title(f"🍴 {st.session_state['user']}")
         t_o, t_n, t_h, t_oc = st.tabs(["🍱 Ova Sedmica", "🚀 Naredna", "📜 Istorija", "⭐ Ocijeni"])
@@ -232,7 +256,6 @@ else:
             rok_tekst = df_m[df_m['Dan']=='Rok']['Jelo'].values[0] if not df_m.empty else "16:00"
             k = df_m[df_m['Dan']=='Kuvar']['Jelo'].values[0] if not df_m.empty else "/"
             
-            # Tajmer
             sat_limita = izvadi_sat_iz_roka(rok_tekst)
             sada = datetime.now() + timedelta(hours=2) 
             danas_idx = sada.weekday()
@@ -254,18 +277,14 @@ else:
                 unose = []
                 for d in dani_std:
                     idx = dani_std.index(d)
-                    if not lock:
-                        dis = False
+                    if not lock: dis = False
                     else:
                         is_proslost = danas_idx > idx
                         is_danas = danas_idx == idx
                         is_sutra = (danas_idx + 1 == idx)
-                        if is_proslost or is_danas:
-                            dis = True
-                        elif is_sutra:
-                            dis = (trenutni_sat >= sat_limita)
-                        else:
-                            dis = False
+                        if is_proslost or is_danas: dis = True
+                        elif is_sutra: dis = (trenutni_sat >= sat_limita)
+                        else: dis = False
                     
                     icon = "🔒" if dis else "📅"
                     with st.container(border=True):
@@ -278,14 +297,11 @@ else:
                                 if df_sve.empty: return 0
                                 m = df_sve[(df_sve['Firma']==st.session_state['user']) & (df_sve['Dan']==f"{pref}-{d}") & (df_sve['Jelo']==j) & (df_sve['Smjena']==sn)]
                                 return int(m['Kolicina'].iloc[0]) if not m.empty else 0
-                            
                             k1=c1.number_input("I SMJENA",0,100,g_v("I"),key=f"{pref}{d}{j}1",disabled=dis)
                             k2=c2.number_input("II SMJENA",0,100,g_v("II"),key=f"{pref}{d}{j}2",disabled=dis)
                             k3=c3.number_input("III SMJENA",0,100,g_v("III"),key=f"{pref}{d}{j}3",disabled=dis)
-                            
                             for v, sn in zip([k1,k2,k3],["I","II","III"]):
                                 if v > 0: unose.append({"Firma":st.session_state['user'], "Dan":f"{pref}-{d}", "Jelo":j, "Kolicina":v, "Smjena":sn})
-                
                 if st.form_submit_button("SAČUVAJ"):
                     df_ost = df_sve[~((df_sve['Firma']==st.session_state['user']) & (df_sve['Dan'].str.startswith(pref)))] if not df_sve.empty else pd.DataFrame()
                     conn.update(spreadsheet=spreadsheet_url, worksheet="Sheet1", data=pd.concat([df_ost, pd.DataFrame(unose)]))
