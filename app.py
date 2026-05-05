@@ -125,7 +125,7 @@ st.markdown("""
 spreadsheet_url = st.secrets["connections"]["gsheets"]["spreadsheet"]
 conn = st.connection("gsheets", type=GSheetsConnection)
 dani_std = ["Ponedjeljak", "Utorak", "Srijeda", "Četvrtak", "Petak", "Subota"]
-sve_firme = ["Lattonedil", "PVA Group", "Esintec", "ActivBH", "Veletrgovina Kancelarija"]
+sve_firme = ["Lattonedil", "PVA Group", "Esintec", "ActivBH"]
 mapa_ocjena = {"Loše": 1, "Može bolje": 2, "Dobro": 3, "Odlično": 4, "Savršeno": 5}
 users = {"admin": "admin123", "Lattonedil": "lattonedil321", "PVA Group": "pvagroup321", "Esintec": "esintec321", "ActivBH": "activbh321", "Veletrgovina Kancelarija": "nina321}
 
