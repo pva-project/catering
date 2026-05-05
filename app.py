@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 import re
 import time
 
-# --- 1. STILIZACIJA (Nepromijenjeno) ---
+# --- 1. STILIZACIJA ---
 st.set_page_config(page_title="Catering System", layout="centered")
 
 st.markdown("""
@@ -110,31 +110,77 @@ else:
         st.title("👨‍🍳 Admin Upravljanje")
         t1, t2, t3, t4 = st.tabs(["📊 Kuhinja", "📝 Meni", "⭐ Ocjene", "🔄 Reset"])
         
-        with t1: # KUHINJA (DODATO DUGME ZA IZVJEŠTAJ)
+        with t1:
             df_nar = ucitaj_sheet("Sheet1")
             dan_sel = st.selectbox("Izaberi dan:", dani_std)
             
-            # Dugme za generisanje pregleda za štampu
-            if st.button("📄 Generiši listu za kuhinju (Štampa)"):
-                st.info(f"Pripremam izvještaj za {dan_sel}...")
-                # Ovdje se može dodati logika za PDF download
-            
             if not df_nar.empty:
                 dan_data = df_nar[df_nar['Dan'] == f"Ova-{dan_sel}"]
+                datum_str = (datetime.now() + timedelta(hours=2)).strftime('%d.%m.%Y')
+
+                # --- GENERISANJE HTML-a ZA ŠTAMPU ---
+                html_izvjestaj = f"""
+                <html>
+                <head>
+                    <meta charset="utf-8">
+                    <style>
+                        body {{ font-family: 'Arial', sans-serif; padding: 20px; color: #222; }}
+                        .header {{ background: #E24A4A; color: white; padding: 20px; text-align: center; border-radius: 10px; margin-bottom: 20px; }}
+                        .card {{ border: 1px solid #ddd; margin-bottom: 25px; border-radius: 8px; overflow: hidden; }}
+                        .card-h {{ background: #1A1C23; color: white; padding: 12px; font-size: 16pt; font-weight: bold; }}
+                        table {{ width: 100%; border-collapse: collapse; }}
+                        th {{ background: #f2f2f2; text-align: left; padding: 12px; border-bottom: 2px solid #ddd; }}
+                        td {{ padding: 12px; border-bottom: 1px solid #eee; }}
+                        .jelo-row {{ background: #fff5f5; font-weight: bold; color: #E24A4A; }}
+                        .firma-row td {{ padding-left: 30px; color: #555; }}
+                        .total-row {{ background: #f9f9f9; text-align: right; padding: 12px; font-weight: bold; border-top: 2px solid #ddd; font-size: 13pt; }}
+                        @media print {{ .no-print {{ display: none; }} body {{ padding: 0; }} }}
+                    </style>
+                </head>
+                <body>
+                    <div class="header">
+                        <h1 style="margin:0;">LISTA ZA KUHINJU</h1>
+                        <p style="margin:5px 0 0 0; font-size: 14pt;">{dan_sel}, {datum_str}</p>
+                    </div>
+                """
                 for smj in ["I", "II", "III"]:
                     smj_d = dan_data[dan_data['Smjena'] == smj]
                     if not smj_d.empty:
-                        html = f'<div class="kuhinja-box"><div class="smjena-header-text">🕒 SMJENA {smj}</div>'
-                        html += '<div class="table-header"><span>JELO / FIRMA</span><span>KOLIČINA</span></div>'
+                        html_izvjestaj += f'<div class="card"><div class="card-h">🕒 SMJENA {smj}</div>'
+                        html_izvjestaj += '<table><thead><tr><th>JELO / FIRMA</th><th style="text-align:right">KOLIČINA</th></tr></thead><tbody>'
                         for jelo, j_d in smj_d.groupby("Jelo"):
-                            html += f'<div class="jelo-title">{jelo}</div>'
+                            html_izvjestaj += f'<tr class="jelo-row"><td>🍴 {jelo}</td><td style="text-align:right">{int(j_d["Kolicina"].sum())} UKUPNO</td></tr>'
                             for _, r in j_d.iterrows():
-                                html += f'<div class="row-firma"><span>🏢 {r["Firma"]}</span><span style="font-weight:bold;">{int(r["Kolicina"])} kom</span></div>'
-                            html += f'<div class="jelo-ukupno">UKUPNO {jelo}: {int(j_d["Kolicina"].sum())}</div>'
-                        html += '</div>'
-                        st.markdown(html, unsafe_allow_html=True)
+                                html_izvjestaj += f'<tr class="firma-row"><td>🏢 {r["Firma"]}</td><td style="text-align:right">{int(r["Kolicina"])} kom</td></tr>'
+                        html_izvjestaj += f'</tbody></table><div class="total-row">UKUPNO SMJENA {smj}: {int(smj_d["Kolicina"].sum())} obroka</div></div>'
+                
+                html_izvjestaj += "</body></html>"
 
-        with t2: # EDIT MENI (Nepromijenjeno)
+                # DUGME ZA DOWNLOAD
+                st.download_button(
+                    label="📥 PREUZMI LISTU ZA ŠTAMPU",
+                    data=html_izvjestaj,
+                    file_name=f"Kuhinja_{dan_sel}.html",
+                    mime="text/html",
+                    use_container_width=True
+                )
+                st.divider()
+
+                # Vizuelni prikaz u aplikaciji (dark mode stil)
+                for smj in ["I", "II", "III"]:
+                    smj_d = dan_data[dan_data['Smjena'] == smj]
+                    if not smj_d.empty:
+                        html_box = f'<div class="kuhinja-box"><div class="smjena-header-text">🕒 SMJENA {smj}</div>'
+                        html_box += '<div class="table-header"><span>JELO / FIRMA</span><span>KOLIČINA</span></div>'
+                        for jelo, j_d in smj_d.groupby("Jelo"):
+                            html_box += f'<div class="jelo-title">{jelo}</div>'
+                            for _, r in j_d.iterrows():
+                                html_box += f'<div class="row-firma"><span>🏢 {r["Firma"]}</span><span style="font-weight:bold;">{int(r["Kolicina"])} kom</span></div>'
+                            html_box += f'<div class="jelo-ukupno">UKUPNO {jelo}: {int(j_d["Kolicina"].sum())}</div>'
+                        html_box += '</div>'
+                        st.markdown(html_box, unsafe_allow_html=True)
+
+        with t2: # EDIT MENI
             od_m = st.radio("Uredi:", ["Meni_Trenutni", "Meni_Naredni"], horizontal=True)
             df_m = ucitaj_sheet(od_m)
             with st.form(f"f_{od_m}"):
@@ -158,7 +204,7 @@ else:
                     conn.update(spreadsheet=spreadsheet_url, worksheet=od_m, data=pd.DataFrame(novi))
                     st.success("Sačuvano!"); time.sleep(1); st.rerun()
 
-        with t3: # ADMIN OCJENE (Nepromijenjeno)
+        with t3: # OCJENE
             df_o = ucitaj_sheet("Ocjene")
             pj, pk = izracunaj_prosjeke()
             if pk:
@@ -167,7 +213,7 @@ else:
             st.divider()
             st.dataframe(df_o, use_container_width=True, hide_index=True)
 
-        with t4: # ROTIRAJ (Nepromijenjeno)
+        with t4: # ROTACIJA
             if st.button("🚀 ROTIRAJ SEDMICE"):
                 df_n = ucitaj_sheet("Meni_Naredni")
                 if not df_n.empty:
@@ -186,7 +232,7 @@ else:
             rok_tekst = df_m[df_m['Dan']=='Rok']['Jelo'].values[0] if not df_m.empty else "16:00"
             k = df_m[df_m['Dan']=='Kuvar']['Jelo'].values[0] if not df_m.empty else "/"
             
-            # --- LOGIKA TAJMERA (UTC+2) ---
+            # Tajmer
             sat_limita = izvadi_sat_iz_roka(rok_tekst)
             sada = datetime.now() + timedelta(hours=2) 
             danas_idx = sada.weekday()
